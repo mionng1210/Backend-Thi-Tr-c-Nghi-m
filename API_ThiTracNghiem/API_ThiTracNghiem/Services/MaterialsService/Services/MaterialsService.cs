@@ -9,7 +9,7 @@ namespace MaterialsService.Services;
 
 public interface IMaterialsService
 {
-    Task<List<MaterialListItemDto>> GetAsync(int pageIndex, int pageSize);
+    Task<object> GetAsync(int pageIndex, int pageSize);
     Task<MaterialListItemDto?> GetByIdAsync(int id);
     Task<List<UploadedFileDto>> CreateManyAsync(int courseId, string? title, string? description, bool isPaid, decimal? price, int? orderIndex, IFormFileCollection files);
     Task<MaterialListItemDto?> UpdateAsync(int id, int? courseId, string? title, string? description, bool? isPaid, decimal? price, int? orderIndex, IFormFile? file);
@@ -28,11 +28,15 @@ public class MaterialsService : IMaterialsService
         _docs = docs;
     }
 
-    public async Task<List<MaterialListItemDto>> GetAsync(int pageIndex, int pageSize)
+    public async Task<object> GetAsync(int pageIndex, int pageSize)
     {
-        return await _db.Materials
-            .Where(m => !m.HasDelete)
-            .OrderBy(m => m.OrderIndex)
+        if (pageIndex <= 0) pageIndex = 1;
+        if (pageSize <= 0) pageSize = 10;
+
+        var query = _db.Materials.Where(m => !m.HasDelete).OrderBy(m => m.OrderIndex);
+        var totalItems = await query.CountAsync();
+
+        var items = await query
             .Skip((pageIndex - 1) * pageSize)
             .Take(pageSize)
             .Select(m => new MaterialListItemDto
@@ -50,6 +54,15 @@ public class MaterialsService : IMaterialsService
                 CreatedAt = m.CreatedAt,
                 UpdatedAt = m.UpdatedAt
             }).ToListAsync();
+
+        return new
+        {
+            pageIndex = pageIndex,
+            pageSize = pageSize,
+            totalItems = totalItems,
+            totalPages = (int)Math.Ceiling((double)totalItems / pageSize),
+            items = items
+        };
     }
 
     public async Task<MaterialListItemDto?> GetByIdAsync(int id)

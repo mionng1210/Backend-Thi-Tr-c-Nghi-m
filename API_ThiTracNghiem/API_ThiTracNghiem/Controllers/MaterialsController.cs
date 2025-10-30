@@ -33,8 +33,19 @@ namespace API_ThiTracNghiem.Controllers
         {
             try
             {
-                var data = await _service.GetAsync(request.PageIndex, request.PageSize);
-                return Ok(ApiResponse.Success(data));
+                var pagedData = await _service.GetAsync(request.PageIndex, request.PageSize);
+                
+                // Create response with pagination info
+                var response = new
+                {
+                    pageIndex = pagedData.PageIndex,
+                    pageSize = pagedData.PageSize,
+                    totalItems = pagedData.TotalItems,
+                    totalPages = (int)Math.Ceiling((double)pagedData.TotalItems / pagedData.PageSize),
+                    items = pagedData.Items
+                };
+                
+                return Ok(ApiResponse.Success(response, "Lấy danh sách tài liệu thành công"));
             }
             catch (System.Exception ex)
             {

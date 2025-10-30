@@ -270,7 +270,7 @@ namespace API_ThiTracNghiem.Controllers
                 UserId = user.UserId,
                 OtpCode = otpCode,
                 Purpose = "forgot_password",
-                ExpiresAt = DateTime.UtcNow.AddMinutes(10), // OTP hết hạn sau 10 phút
+                ExpiresAt = DateTime.UtcNow.AddMinutes(5), // OTP hết hạn sau 5 phút
                 IsUsed = false,
                 CreatedAt = DateTime.UtcNow
             };
@@ -279,7 +279,7 @@ namespace API_ThiTracNghiem.Controllers
 
             // Gửi email OTP
             var subject = "Đặt lại mật khẩu - Mã OTP xác thực";
-            var body = EmailTemplates.BuildForgotPasswordCard(user.FullName ?? "Người dùng", otpCode, 10);
+            var body = EmailTemplates.BuildForgotPasswordCard(user.FullName ?? "Người dùng", otpCode, 5);
             await _email.SendAsync(request.Email, subject, body);
 
             return Ok(new { message = "Nếu email tồn tại, mã OTP đã được gửi đến email của bạn." });
