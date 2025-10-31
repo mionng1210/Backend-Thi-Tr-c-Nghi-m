@@ -162,4 +162,68 @@ namespace API_ThiTracNghiem.Contracts
         [MaxLength(50)]
         public string? Status { get; set; }
     }
+
+    // Request DTO for mixing questions based on difficulty
+    public class MixQuestionsRequest
+    {
+        [Range(1, 100)]
+        public int NumberOfVariants { get; set; } = 1;
+
+        [Range(1, 500)]
+        public int TotalQuestions { get; set; }
+
+        public List<DifficultyDistribution> DifficultyDistribution { get; set; } = new();
+    }
+
+    // DTO for difficulty distribution
+    public class DifficultyDistribution
+    {
+        [Required]
+        [MaxLength(50)]
+        public string Difficulty { get; set; } = string.Empty; // Easy, Medium, Hard
+
+        [Range(1, 500)]
+        public int QuestionCount { get; set; }
+
+        [Range(0.01, 100)]
+        public decimal MarksPerQuestion { get; set; }
+    }
+
+    // Response DTO for mixed questions
+    public class MixQuestionsResponse
+    {
+        public int ExamId { get; set; }
+        public List<ExamVariant> Variants { get; set; } = new();
+        public string Message { get; set; } = string.Empty;
+    }
+
+    // DTO for exam variant
+    public class ExamVariant
+    {
+        public string VariantCode { get; set; } = string.Empty;
+        public List<ExamQuestionDto> Questions { get; set; } = new();
+        public decimal TotalMarks { get; set; }
+    }
+
+    // Request DTO for starting an exam
+    public class StartExamRequest
+    {
+        public string? VariantCode { get; set; }
+    }
+
+    // Response DTO for starting an exam
+    public class StartExamResponse
+    {
+        public int ExamAttemptId { get; set; }
+        public int ExamId { get; set; }
+        public string ExamTitle { get; set; } = string.Empty;
+        public string? VariantCode { get; set; }
+        public DateTime StartTime { get; set; }
+        public DateTime? EndTime { get; set; }
+        public int DurationMinutes { get; set; }
+        public List<ExamQuestionDto> Questions { get; set; } = new();
+        public decimal TotalMarks { get; set; }
+        public decimal PassingMark { get; set; }
+        public string Instructions { get; set; } = string.Empty;
+    }
 }

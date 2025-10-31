@@ -11,5 +11,7 @@ namespace API_ThiTracNghiem.Contracts
         Task<bool> DeleteExamAsync(int id, int userId);
         Task<bool> AddQuestionToExamAsync(int examId, CreateExamQuestionRequest request, int userId);
         Task<bool> RemoveQuestionFromExamAsync(int examId, int questionId, int userId);
+        Task<MixQuestionsResponse> MixQuestionsAsync(int examId, MixQuestionsRequest request, int userId);
+        Task<StartExamResponse> StartExamAsync(int examId, StartExamRequest request, int userId);
     }
 }

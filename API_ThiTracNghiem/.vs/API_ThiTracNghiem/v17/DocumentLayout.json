@@ -1,7 +1,16 @@
 {
   "Version": 1,
   "WorkspaceRootPath": "E:\\DACN\\Backend-Thi-Tr-c-Nghi-m\\API_ThiTracNghiem\\",
-  "Documents": [],
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{D0F6FDD9-EB7E-4DAB-B6D6-42B1D7A16E49}|API_ThiTracNghiem\\Services\\ExamsService\\ExamsService.csproj|e:\\dacn\\backend-thi-tr-c-nghi-m\\api_thitracnghiem\\api_thitracnghiem\\services\\examsservice\\data\\seeddata.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D0F6FDD9-EB7E-4DAB-B6D6-42B1D7A16E49}|API_ThiTracNghiem\\Services\\ExamsService\\ExamsService.csproj|solutionrelative:api_thitracnghiem\\services\\examsservice\\data\\seeddata.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{6B08AEFC-D112-47F7-BE3C-49BFA5831DFF}|API_ThiTracNghiem\\API_ThiTracNghiem.csproj|e:\\dacn\\backend-thi-tr-c-nghi-m\\api_thitracnghiem\\api_thitracnghiem\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{6B08AEFC-D112-47F7-BE3C-49BFA5831DFF}|API_ThiTracNghiem\\API_ThiTracNghiem.csproj|solutionrelative:api_thitracnghiem\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
@@ -9,7 +18,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": -1,
+          "SelectedChildIndex": 2,
           "Children": [
             {
               "$type": "Bookmark",
@@ -18,6 +27,32 @@
             {
               "$type": "Bookmark",
               "Name": "ST:0:0:{d78612c7-9962-4b83-95d9-268046dad23a}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "SeedData.cs",
+              "DocumentMoniker": "E:\\DACN\\Backend-Thi-Tr-c-Nghi-m\\API_ThiTracNghiem\\API_ThiTracNghiem\\Services\\ExamsService\\Data\\SeedData.cs",
+              "RelativeDocumentMoniker": "API_ThiTracNghiem\\Services\\ExamsService\\Data\\SeedData.cs",
+              "ToolTip": "E:\\DACN\\Backend-Thi-Tr-c-Nghi-m\\API_ThiTracNghiem\\API_ThiTracNghiem\\Services\\ExamsService\\Data\\SeedData.cs",
+              "RelativeToolTip": "API_ThiTracNghiem\\Services\\ExamsService\\Data\\SeedData.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAoAAAAMAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-10-31T09:14:45.054Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "Program.cs",
+              "DocumentMoniker": "E:\\DACN\\Backend-Thi-Tr-c-Nghi-m\\API_ThiTracNghiem\\API_ThiTracNghiem\\Program.cs",
+              "RelativeDocumentMoniker": "API_ThiTracNghiem\\Program.cs",
+              "ToolTip": "E:\\DACN\\Backend-Thi-Tr-c-Nghi-m\\API_ThiTracNghiem\\API_ThiTracNghiem\\Program.cs",
+              "RelativeToolTip": "API_ThiTracNghiem\\Program.cs",
+              "ViewState": "AgIAABsAAAAAAAAAAAAAAAYAAAAYAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-10-31T07:52:24.645Z",
+              "EditorCaption": ""
             }
           ]
         }

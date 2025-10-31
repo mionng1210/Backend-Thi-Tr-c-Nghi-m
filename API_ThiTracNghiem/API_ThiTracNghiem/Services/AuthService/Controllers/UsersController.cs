@@ -7,10 +7,10 @@ using Microsoft.EntityFrameworkCore;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Globalization;
-using AuthService.Data;
-using AuthService.DTOs;
+using API_ThiTracNghiem.Services.AuthService.Data;
+using API_ThiTracNghiem.Services.AuthService.DTOs;
 
-namespace AuthService.Controllers;
+namespace API_ThiTracNghiem.Services.AuthService.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]

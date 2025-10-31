@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Mail;
 
-namespace AuthService.Services;
+namespace API_ThiTracNghiem.Services.AuthService.Services;
 
 public interface IEmailService
 {

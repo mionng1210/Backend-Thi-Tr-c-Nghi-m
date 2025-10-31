@@ -7,6 +7,8 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using ExamsService.Data;
 using System.Text;
+using API_ThiTracNghiem.Services;
+using API_ThiTracNghiem.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -77,6 +79,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+// User Sync Service
+builder.Services.AddHttpClient<IUserSyncService, UserSyncService>();
+builder.Services.AddScoped<IUserSyncService, UserSyncService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
@@ -88,6 +94,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("AllowAll");
 app.UseAuthentication();
+
+// User Sync Middleware - Đặt sau Authentication
+app.UseUserSync();
+
 app.UseAuthorization();
 
 app.MapControllers();

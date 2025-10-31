@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 
-namespace AuthService.Controllers;
+namespace API_ThiTracNghiem.Services.AuthService.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]

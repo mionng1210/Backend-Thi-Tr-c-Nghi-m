@@ -91,6 +91,7 @@ namespace ExamsService.Models
         // Navigation
         public QuestionBank? Bank { get; set; }
         public User? Creator { get; set; }
+        public ICollection<AnswerOption> AnswerOptions { get; set; } = new List<AnswerOption>();
     }
 
     public class QuestionBank
@@ -249,5 +250,77 @@ namespace ExamsService.Models
         public string? Description { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    }
+
+    public class ExamAttempt
+    {
+        [Key]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+        public int ExamAttemptId { get; set; }
+
+        public int ExamId { get; set; }
+        public int UserId { get; set; }
+
+        [MaxLength(50)]
+        public string? VariantCode { get; set; }
+
+        public DateTime StartTime { get; set; }
+        public DateTime? EndTime { get; set; }
+        public DateTime? SubmittedAt { get; set; }
+
+        public decimal? Score { get; set; }
+        public decimal? MaxScore { get; set; }
+
+        [MaxLength(50)]
+        public string Status { get; set; } = "InProgress"; // InProgress, Completed, Abandoned
+
+        public bool IsSubmitted { get; set; }
+        public int? TimeSpentMinutes { get; set; }
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public bool HasDelete { get; set; }
+
+        // Navigation
+        public Exam? Exam { get; set; }
+        public User? User { get; set; }
+    }
+
+    public class SubmittedAnswer
+    {
+        [Key]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+        public int SubmittedAnswerId { get; set; }
+
+        public int ExamAttemptId { get; set; }
+        public int QuestionId { get; set; }
+
+        [MaxLength(4000)]
+        public string? TextAnswer { get; set; } // For text-based questions
+
+        public bool IsCorrect { get; set; }
+        public decimal EarnedMarks { get; set; }
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public bool HasDelete { get; set; }
+
+        // Navigation
+        public ExamAttempt? ExamAttempt { get; set; }
+        public Question? Question { get; set; }
+    }
+
+    public class SubmittedAnswerOption
+    {
+        [Key]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+        public int SubmittedAnswerOptionId { get; set; }
+
+        public int SubmittedAnswerId { get; set; }
+        public int AnswerOptionId { get; set; }
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        // Navigation
+        public SubmittedAnswer? SubmittedAnswer { get; set; }
+        public AnswerOption? AnswerOption { get; set; }
     }
 }

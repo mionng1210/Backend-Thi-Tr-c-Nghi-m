@@ -1,16 +1,17 @@
 using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using AuthService.Data;
-using AuthService.Models;
-using AuthService.Services;
-using AuthService.Utils;
+using API_ThiTracNghiem.Services.AuthService.Data;
+using API_ThiTracNghiem.Services.AuthService.Models;
+using API_ThiTracNghiem.Services.AuthService.Services;
+using API_ThiTracNghiem.Services.AuthService.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using API_ThiTracNghiem.Shared.Contracts;
 using Shared.Contracts.Auth;
 
-namespace AuthService.Controllers;
+namespace API_ThiTracNghiem.Services.AuthService.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]

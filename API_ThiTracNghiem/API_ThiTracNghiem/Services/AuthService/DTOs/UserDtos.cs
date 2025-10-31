@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 
-namespace AuthService.DTOs
+namespace API_ThiTracNghiem.Services.AuthService.DTOs
 {
     public class GetUserResponse
     {

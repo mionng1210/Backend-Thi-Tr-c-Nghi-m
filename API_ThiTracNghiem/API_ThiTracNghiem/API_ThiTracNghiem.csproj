@@ -23,13 +23,25 @@
 
   <!-- Loại trừ mã nguồn của các project con trong thư mục con khỏi monolith -->
   <ItemGroup>
-    <Compile Remove="Services\**\*.cs" />
+    <Compile Remove="Services\AuthService\**\*.cs" />
+    <Compile Remove="Services\ExamsService\**\*.cs" />
+    <Compile Remove="Services\MaterialsService\**\*.cs" />
+    <Compile Remove="Services\MaterialsService.Tests\**\*.cs" />
     <Compile Remove="Shared\**\*.cs" />
-    <EmbeddedResource Remove="Services\**\*.*" />
+    <EmbeddedResource Remove="Services\AuthService\**\*.*" />
+    <EmbeddedResource Remove="Services\ExamsService\**\*.*" />
+    <EmbeddedResource Remove="Services\MaterialsService\**\*.*" />
+    <EmbeddedResource Remove="Services\MaterialsService.Tests\**\*.*" />
     <EmbeddedResource Remove="Shared\**\*.*" />
-    <None Remove="Services\**\*.*" />
+    <None Remove="Services\AuthService\**\*.*" />
+    <None Remove="Services\ExamsService\**\*.*" />
+    <None Remove="Services\MaterialsService\**\*.*" />
+    <None Remove="Services\MaterialsService.Tests\**\*.*" />
     <None Remove="Shared\**\*.*" />
-    <Content Remove="Services\**\*.*" />
+    <Content Remove="Services\AuthService\**\*.*" />
+    <Content Remove="Services\ExamsService\**\*.*" />
+    <Content Remove="Services\MaterialsService\**\*.*" />
+    <Content Remove="Services\MaterialsService.Tests\**\*.*" />
     <Content Remove="Shared\**\*.*" />
   </ItemGroup>
 

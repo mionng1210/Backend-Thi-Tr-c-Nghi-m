@@ -5,6 +5,8 @@ using ExamsService.Data;
 using ExamsService.DTOs;
 using ExamsService.Models;
 using System.Security.Claims;
+using API_ThiTracNghiem.Services;
+using API_ThiTracNghiem.Middleware;
 
 namespace ExamsService.Controllers
 {
@@ -13,10 +15,14 @@ namespace ExamsService.Controllers
     public class ExamsController : ControllerBase
     {
         private readonly ExamsDbContext _context;
+        private readonly IUserSyncService _userSyncService;
+        private readonly ILogger<ExamsController> _logger;
 
-        public ExamsController(ExamsDbContext context)
+        public ExamsController(ExamsDbContext context, IUserSyncService userSyncService, ILogger<ExamsController> logger)
         {
             _context = context;
+            _userSyncService = userSyncService;
+            _logger = logger;
         }
 
         /// <summary>
@@ -667,6 +673,716 @@ namespace ExamsService.Controllers
             catch (Exception)
             {
                 return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi thêm câu hỏi từ ngân hàng", 500));
+            }
+        }
+
+        /// <summary>
+        /// Trộn câu hỏi theo độ khó để tạo đề thi
+        /// </summary>
+        [HttpPost("{id}/mix-questions")]
+        [Authorize(Roles = "Teacher,Admin")]
+        public async Task<IActionResult> MixQuestions(int id, [FromBody] MixQuestionsRequest request)
+        {
+            try
+            {
+                var teacherId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+
+                // Validate exam exists and user has permission
+                var exam = await _context.Exams
+                    .FirstOrDefaultAsync(e => e.ExamId == id && !e.HasDelete);
+
+                if (exam == null)
+                {
+                    return NotFound(ApiResponse.ErrorResponse("Bài thi không tồn tại", 404));
+                }
+
+                // Check if user has permission (teacher who created the exam or admin)
+                var userRole = User.FindFirst(ClaimTypes.Role)?.Value;
+                if (userRole != "Admin" && exam.CreatedBy != teacherId)
+                {
+                    return Forbid();
+                }
+
+                // Get available questions from question banks
+                var availableQuestions = await _context.Questions
+                    .Include(q => q.Bank)
+                    .Where(q => !q.HasDelete && q.Bank != null && !q.Bank.HasDelete)
+                    .ToListAsync();
+
+                var variants = new List<ExamVariant>();
+
+                for (int variantIndex = 0; variantIndex < request.NumberOfVariants; variantIndex++)
+                {
+                    var variantCode = $"V{variantIndex + 1:D2}";
+                    var selectedQuestions = new List<ExamQuestionDto>();
+                    decimal totalMarks = 0;
+
+                    foreach (var distribution in request.DifficultyDistribution)
+                    {
+                        var questionsForDifficulty = availableQuestions
+                            .Where(q => q.Difficulty?.ToLower() == distribution.Difficulty.ToLower())
+                            .OrderBy(x => Guid.NewGuid()) // Random order
+                            .Take(distribution.QuestionCount)
+                            .ToList();
+
+                        foreach (var question in questionsForDifficulty)
+                        {
+                            var answerOptions = await _context.AnswerOptions
+                                 .Where(ao => ao.QuestionId == question.QuestionId && !ao.HasDelete)
+                                 .Select(ao => new AnswerOptionDto
+                                 {
+                                     OptionId = ao.OptionId,
+                                     Content = ao.Content,
+                                     IsCorrect = ao.IsCorrect,
+                                     SequenceIndex = ao.OrderIndex
+                                 })
+                                 .OrderBy(ao => ao.SequenceIndex)
+                                 .ToListAsync();
+
+                             selectedQuestions.Add(new ExamQuestionDto
+                             {
+                                 QuestionId = question.QuestionId,
+                                 Content = question.Content,
+                                 QuestionType = question.QuestionType,
+                                 Difficulty = question.Difficulty,
+                                 Marks = distribution.MarksPerQuestion,
+                                 Options = answerOptions
+                             });
+
+                            totalMarks += distribution.MarksPerQuestion;
+                        }
+                    }
+
+                    variants.Add(new ExamVariant
+                    {
+                        VariantCode = variantCode,
+                        Questions = selectedQuestions.OrderBy(x => Guid.NewGuid()).ToList(), // Shuffle questions
+                        TotalMarks = totalMarks
+                    });
+                }
+
+                var response = new MixQuestionsResponse
+                {
+                    ExamId = id,
+                    Variants = variants,
+                    Message = $"Đã tạo thành công {request.NumberOfVariants} đề thi với {request.TotalQuestions} câu hỏi mỗi đề"
+                };
+
+                return Ok(ApiResponse.SuccessResponse(response));
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi trộn câu hỏi", 500));
+            }
+        }
+
+        /// <summary>
+        /// Bắt đầu làm bài thi
+        /// </summary>
+        [HttpPost("{id}/start")]
+        [Authorize]
+        public async Task<IActionResult> StartExam(int id, [FromBody] StartExamRequest request)
+        {
+            try
+            {
+                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+
+                // Validate exam exists
+                var exam = await _context.Exams
+                    .Include(e => e.Course)
+                    .FirstOrDefaultAsync(e => e.ExamId == id && !e.HasDelete);
+
+                if (exam == null)
+                {
+                    return NotFound(ApiResponse.ErrorResponse("Bài thi không tồn tại", 404));
+                }
+
+                // Check if exam is active
+                if (exam.Status != "Active")
+                {
+                    return BadRequest(ApiResponse.ErrorResponse("Bài thi chưa được kích hoạt", 400));
+                }
+
+                // Check exam time constraints
+                var now = DateTime.UtcNow;
+                if (exam.StartAt.HasValue && now < exam.StartAt.Value)
+                {
+                    return BadRequest(ApiResponse.ErrorResponse("Bài thi chưa đến thời gian bắt đầu", 400));
+                }
+
+                if (exam.EndAt.HasValue && now > exam.EndAt.Value)
+                {
+                    return BadRequest(ApiResponse.ErrorResponse("Bài thi đã kết thúc", 400));
+                }
+
+                // Check if user already has an active attempt
+                var existingAttempt = await _context.ExamAttempts
+                    .FirstOrDefaultAsync(ea => ea.ExamId == id && ea.UserId == userId && 
+                                             ea.Status == "InProgress" && !ea.HasDelete);
+
+                if (existingAttempt != null)
+                {
+                    return BadRequest(ApiResponse.ErrorResponse("Bạn đã có một lần thi đang diễn ra", 400));
+                }
+
+                // Check multiple attempts policy
+                if (!exam.AllowMultipleAttempts)
+                {
+                    var previousAttempts = await _context.ExamAttempts
+                        .CountAsync(ea => ea.ExamId == id && ea.UserId == userId && !ea.HasDelete);
+
+                    if (previousAttempts > 0)
+                    {
+                        return BadRequest(ApiResponse.ErrorResponse("Bài thi này chỉ cho phép làm một lần", 400));
+                    }
+                }
+
+                // Get exam questions
+                var examQuestions = await _context.ExamQuestions
+                    .Include(eq => eq.Question)
+                    .ThenInclude(q => q.Bank)
+                    .Where(eq => eq.ExamId == id && !eq.HasDelete && !eq.Question.HasDelete)
+                    .OrderBy(eq => eq.SequenceIndex)
+                    .ToListAsync();
+
+                if (!examQuestions.Any())
+                {
+                    return BadRequest(ApiResponse.ErrorResponse("Bài thi chưa có câu hỏi", 400));
+                }
+
+                // Create exam attempt
+                var examAttempt = new ExamAttempt
+                {
+                    ExamId = id,
+                    UserId = userId,
+                    VariantCode = request.VariantCode,
+                    StartTime = now,
+                    EndTime = exam.DurationMinutes.HasValue ? now.AddMinutes(exam.DurationMinutes.Value) : null,
+                    Status = "InProgress",
+                    IsSubmitted = false,
+                    CreatedAt = now,
+                    HasDelete = false
+                };
+
+                _context.ExamAttempts.Add(examAttempt);
+                await _context.SaveChangesAsync();
+
+                // Prepare questions for response
+                var questions = new List<ExamQuestionDto>();
+                foreach (var examQuestion in examQuestions)
+                {
+                    var answerOptions = await _context.AnswerOptions
+                         .Where(ao => ao.QuestionId == examQuestion.QuestionId && !ao.HasDelete)
+                         .Select(ao => new AnswerOptionDto
+                         {
+                             OptionId = ao.OptionId,
+                             Content = ao.Content,
+                             IsCorrect = false, // Don't reveal correct answers
+                             SequenceIndex = ao.OrderIndex
+                         })
+                         .OrderBy(ao => ao.SequenceIndex)
+                         .ToListAsync();
+
+                     questions.Add(new ExamQuestionDto
+                     {
+                         QuestionId = examQuestion.QuestionId,
+                         Content = examQuestion.Question.Content,
+                         QuestionType = examQuestion.Question.QuestionType,
+                         Difficulty = examQuestion.Question.Difficulty,
+                         Marks = examQuestion.Marks,
+                         Options = answerOptions
+                     });
+                }
+
+                // Randomize questions if enabled
+                if (exam.RandomizeQuestions)
+                {
+                    questions = questions.OrderBy(x => Guid.NewGuid()).ToList();
+                }
+
+                var response = new StartExamResponse
+                {
+                    ExamAttemptId = examAttempt.ExamAttemptId,
+                    ExamId = id,
+                    ExamTitle = exam.Title,
+                    VariantCode = request.VariantCode,
+                    StartTime = examAttempt.StartTime,
+                    EndTime = examAttempt.EndTime,
+                    DurationMinutes = exam.DurationMinutes ?? 0,
+                    Questions = questions,
+                    TotalMarks = exam.TotalMarks ?? 0,
+                    PassingMark = exam.PassingMark ?? 0,
+                    Instructions = exam.Description ?? ""
+                };
+
+                return Ok(ApiResponse.SuccessResponse(response));
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi bắt đầu bài thi", 500));
+            }
+        }
+
+        [HttpPost("{id}/submit")]
+        public async Task<IActionResult> SubmitExam(int id, [FromBody] SubmitExamRequest request)
+        {
+            try
+            {
+                // Get current user ID (assuming from JWT token)
+                var userIdClaim = User.FindFirst("UserId")?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(ApiResponse.ErrorResponse("Không thể xác thực người dùng", 401));
+                }
+
+                // Find the active exam attempt
+                var examAttempt = await _context.ExamAttempts
+                    .Include(ea => ea.Exam)
+                    .FirstOrDefaultAsync(ea => ea.ExamId == id && ea.UserId == userId && ea.Status == "InProgress");
+
+                if (examAttempt == null)
+                {
+                    return NotFound(ApiResponse.ErrorResponse("Không tìm thấy phiên thi đang diễn ra", 404));
+                }
+
+                // Check if exam time has expired
+                if (examAttempt.EndTime.HasValue && DateTime.UtcNow > examAttempt.EndTime.Value)
+                {
+                    return BadRequest(ApiResponse.ErrorResponse("Thời gian làm bài đã hết", 400));
+                }
+
+                var exam = examAttempt.Exam;
+                if (exam == null)
+                {
+                    return NotFound(ApiResponse.ErrorResponse("Không tìm thấy bài thi", 404));
+                }
+
+                // Calculate time spent
+                var timeSpent = (int)(DateTime.UtcNow - examAttempt.StartTime).TotalMinutes;
+
+                decimal totalScore = 0;
+                var questionResults = new List<QuestionResultDto>();
+
+                // Process each submitted answer
+                foreach (var submittedAnswer in request.Answers)
+                {
+                    // Get question details
+                    var question = await _context.Questions
+                        .Include(q => q.AnswerOptions)
+                        .FirstOrDefaultAsync(q => q.QuestionId == submittedAnswer.QuestionId);
+
+                    if (question == null) continue;
+
+                    // Get question marks from exam
+                    var examQuestion = await _context.ExamQuestions
+                        .FirstOrDefaultAsync(eq => eq.ExamId == id && eq.QuestionId == submittedAnswer.QuestionId);
+
+                    var questionMarks = examQuestion?.Marks ?? 0;
+                    var earnedMarks = 0m;
+                    var isCorrect = false;
+
+                    // Create submitted answer record
+                    var submittedAnswerEntity = new SubmittedAnswer
+                    {
+                        ExamAttemptId = examAttempt.ExamAttemptId,
+                        QuestionId = submittedAnswer.QuestionId,
+                        TextAnswer = submittedAnswer.TextAnswer,
+                        EarnedMarks = 0, // Will be calculated below
+                        IsCorrect = false, // Will be calculated below
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    _context.SubmittedAnswers.Add(submittedAnswerEntity);
+                    await _context.SaveChangesAsync(); // Save to get ID
+
+                    // Process multiple choice answers
+                    if (submittedAnswer.SelectedOptionIds?.Any() == true)
+                    {
+                        var correctOptions = question.AnswerOptions.Where(ao => ao.IsCorrect).ToList();
+                        var selectedOptions = question.AnswerOptions.Where(ao => submittedAnswer.SelectedOptionIds.Contains(ao.OptionId)).ToList();
+
+                        // Save selected options
+                        foreach (var optionId in submittedAnswer.SelectedOptionIds)
+                        {
+                            var submittedOption = new SubmittedAnswerOption
+                            {
+                                SubmittedAnswerId = submittedAnswerEntity.SubmittedAnswerId,
+                                AnswerOptionId = optionId,
+                                CreatedAt = DateTime.UtcNow
+                            };
+                            _context.SubmittedAnswerOptions.Add(submittedOption);
+                        }
+
+                        // Check if answer is correct (all correct options selected, no incorrect options selected)
+                        var correctOptionIds = correctOptions.Select(co => co.OptionId).ToHashSet();
+                        var selectedOptionIds = submittedAnswer.SelectedOptionIds.ToHashSet();
+
+                        isCorrect = correctOptionIds.SetEquals(selectedOptionIds);
+                        earnedMarks = isCorrect ? questionMarks : 0;
+                    }
+                    // Process text answers (basic exact match for now)
+                    else if (!string.IsNullOrEmpty(submittedAnswer.TextAnswer))
+                    {
+                        // For text questions, you might want to implement more sophisticated checking
+                        // For now, we'll mark as correct if there's an answer (manual grading might be needed)
+                        isCorrect = true;
+                        earnedMarks = questionMarks; // Or implement your grading logic
+                    }
+
+                    // Update submitted answer with results
+                    submittedAnswerEntity.IsCorrect = isCorrect;
+                    submittedAnswerEntity.EarnedMarks = earnedMarks;
+                    totalScore += earnedMarks;
+
+                    // Add to results
+                    questionResults.Add(new QuestionResultDto
+                    {
+                        QuestionId = submittedAnswer.QuestionId,
+                        Content = question.Content,
+                        Marks = questionMarks,
+                        EarnedMarks = earnedMarks,
+                        IsCorrect = isCorrect,
+                        CorrectOptionIds = question.AnswerOptions.Where(ao => ao.IsCorrect).Select(ao => ao.OptionId).ToList(),
+                        SelectedOptionIds = submittedAnswer.SelectedOptionIds ?? new List<int>(),
+                        TextAnswer = submittedAnswer.TextAnswer
+                    });
+                }
+
+                // Update exam attempt
+                examAttempt.Score = totalScore;
+                examAttempt.MaxScore = exam.TotalMarks ?? 0;
+                examAttempt.Status = "Completed";
+                examAttempt.IsSubmitted = true;
+                examAttempt.SubmittedAt = DateTime.UtcNow;
+                examAttempt.TimeSpentMinutes = timeSpent;
+
+                await _context.SaveChangesAsync();
+
+                // Calculate percentage and pass status
+                var maxScore = examAttempt.MaxScore ?? 0;
+                var percentage = maxScore > 0 ? (totalScore / maxScore) * 100 : 0;
+                var isPassed = totalScore >= (exam.PassingMark ?? 0);
+
+                var response = new SubmitExamResponse
+                {
+                    ExamAttemptId = examAttempt.ExamAttemptId,
+                    ExamId = id,
+                    ExamTitle = exam.Title,
+                    Score = totalScore,
+                    MaxScore = maxScore,
+                    Percentage = percentage,
+                    IsPassed = isPassed,
+                    SubmittedAt = examAttempt.SubmittedAt ?? DateTime.UtcNow,
+                    TimeSpentMinutes = timeSpent,
+                    Status = examAttempt.Status,
+                    QuestionResults = questionResults
+                };
+
+                return Ok(ApiResponse.SuccessResponse(response));
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi nộp bài thi", 500));
+            }
+        }
+
+        [HttpGet("results/{userId}")]
+        public async Task<IActionResult> GetUserExamResults(int userId)
+        {
+            try
+            {
+                // Get current user ID for authorization
+                var currentUserIdClaim = User.FindFirst("UserId")?.Value;
+                if (string.IsNullOrEmpty(currentUserIdClaim) || !int.TryParse(currentUserIdClaim, out int currentUserId))
+                {
+                    return Unauthorized(ApiResponse.ErrorResponse("Không thể xác thực người dùng", 401));
+                }
+
+                // Check if user can access these results (either own results or admin/teacher)
+                var userRole = User.FindFirst("Role")?.Value;
+                if (currentUserId != userId && userRole != "Admin" && userRole != "Teacher")
+                {
+                    return StatusCode(403, ApiResponse.ErrorResponse("Không có quyền truy cập kết quả này", 403));
+                }
+
+                // Get user info
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+                if (user == null)
+                {
+                    return NotFound(ApiResponse.ErrorResponse("Không tìm thấy người dùng", 404));
+                }
+
+                // Get exam attempts with results
+                var examAttempts = await _context.ExamAttempts
+                    .Include(ea => ea.Exam)
+                        .ThenInclude(e => e.Course)
+                            .ThenInclude(c => c.Subject)
+                    .Where(ea => ea.UserId == userId && ea.IsSubmitted)
+                    .OrderByDescending(ea => ea.SubmittedAt)
+                    .ToListAsync();
+
+                var results = new List<ExamResultDto>();
+                var attemptCounts = new Dictionary<int, int>();
+
+                foreach (var attempt in examAttempts)
+                {
+                    // Calculate attempt number for this exam
+                    if (!attemptCounts.ContainsKey(attempt.ExamId))
+                    {
+                        attemptCounts[attempt.ExamId] = 0;
+                    }
+                    attemptCounts[attempt.ExamId]++;
+
+                    var percentage = attempt.MaxScore > 0 ? (attempt.Score / attempt.MaxScore) * 100 : 0;
+                    var isPassed = attempt.Score >= (attempt.Exam?.PassingMark ?? 0);
+
+                    results.Add(new ExamResultDto
+                    {
+                        ExamAttemptId = attempt.ExamAttemptId,
+                        ExamId = attempt.ExamId,
+                        ExamTitle = attempt.Exam?.Title ?? "",
+                        CourseName = attempt.Exam?.Course?.Title,
+                        SubjectName = attempt.Exam?.Course?.Subject?.Name,
+                        Score = attempt.Score ?? 0,
+                        MaxScore = attempt.MaxScore ?? 0,
+                        Percentage = percentage ?? 0,
+                        IsPassed = isPassed,
+                        StartTime = attempt.StartTime,
+                        SubmittedAt = attempt.SubmittedAt,
+                        TimeSpentMinutes = attempt.TimeSpentMinutes ?? 0,
+                        Status = attempt.Status,
+                        AttemptNumber = attemptCounts[attempt.ExamId]
+                    });
+                }
+
+                // Calculate statistics
+                var statistics = new ExamResultsStatistics
+                {
+                    TotalExams = results.Count,
+                    PassedExams = results.Count(r => r.IsPassed),
+                    FailedExams = results.Count(r => !r.IsPassed),
+                    AverageScore = results.Any() ? results.Average(r => r.Percentage) : 0,
+                    HighestScore = results.Any() ? results.Max(r => r.Percentage) : 0,
+                    LowestScore = results.Any() ? results.Min(r => r.Percentage) : 0,
+                    PassRate = results.Any() ? (double)results.Count(r => r.IsPassed) / results.Count * 100 : 0
+                };
+
+                var response = new UserExamResultsResponse
+                {
+                    UserId = userId,
+                    UserName = user.FullName ?? user.Email,
+                    Results = results,
+                    Statistics = statistics
+                };
+
+                return Ok(ApiResponse.SuccessResponse(response));
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi lấy kết quả thi", 500));
+            }
+        }
+
+        [HttpGet("{id}/ranking")]
+        public async Task<IActionResult> GetExamRanking(int id)
+        {
+            try
+            {
+                // Get exam info
+                var exam = await _context.Exams
+                    .Include(e => e.Course)
+                        .ThenInclude(c => c.Subject)
+                    .FirstOrDefaultAsync(e => e.ExamId == id);
+
+                if (exam == null)
+                {
+                    return NotFound(ApiResponse.ErrorResponse("Không tìm thấy bài thi", 404));
+                }
+
+                // Get all completed exam attempts for this exam
+                var examAttempts = await _context.ExamAttempts
+                    .Include(ea => ea.User)
+                    .Where(ea => ea.ExamId == id && ea.IsSubmitted)
+                    .OrderByDescending(ea => ea.Score)
+                    .ThenBy(ea => ea.TimeSpentMinutes)
+                    .ThenBy(ea => ea.SubmittedAt)
+                    .ToListAsync();
+
+                // Group by user to get best attempt for each user
+                var bestAttempts = examAttempts
+                    .GroupBy(ea => ea.UserId)
+                    .Select(g => g.OrderByDescending(ea => ea.Score)
+                                  .ThenBy(ea => ea.TimeSpentMinutes)
+                                  .ThenBy(ea => ea.SubmittedAt)
+                                  .First())
+                    .OrderByDescending(ea => ea.Score)
+                    .ThenBy(ea => ea.TimeSpentMinutes)
+                    .ThenBy(ea => ea.SubmittedAt)
+                    .ToList();
+
+                var rankings = new List<RankingEntryDto>();
+                var rank = 1;
+
+                foreach (var attempt in bestAttempts)
+                {
+                    var percentage = attempt.MaxScore > 0 ? (attempt.Score / attempt.MaxScore) * 100 : 0;
+                    
+                    // Count attempts for this user
+                    var userAttemptCount = examAttempts.Count(ea => ea.UserId == attempt.UserId);
+
+                    rankings.Add(new RankingEntryDto
+                    {
+                        Rank = rank++,
+                        UserId = attempt.UserId,
+                        UserName = attempt.User?.FullName ?? attempt.User?.Email ?? "Unknown",
+                        UserEmail = attempt.User?.Email,
+                        Score = attempt.Score ?? 0,
+                        MaxScore = attempt.MaxScore ?? 0,
+                        Percentage = percentage ?? 0,
+                        SubmittedAt = attempt.SubmittedAt ?? DateTime.UtcNow,
+                        TimeSpentMinutes = attempt.TimeSpentMinutes ?? 0,
+                        AttemptNumber = userAttemptCount
+                    });
+                }
+
+                // Calculate statistics
+                var scores = rankings.Select(r => r.Percentage).ToList();
+                var statistics = new RankingStatistics
+                {
+                    TotalParticipants = rankings.Count,
+                    AverageScore = scores.Any() ? scores.Average() : 0,
+                    HighestScore = scores.Any() ? scores.Max() : 0,
+                    LowestScore = scores.Any() ? scores.Min() : 0,
+                    PassRate = rankings.Any() ? (double)rankings.Count(r => r.Score >= (exam.PassingMark ?? 0)) / rankings.Count * 100 : 0,
+                    MedianScore = scores.Any() ? CalculateMedian(scores) : 0
+                };
+
+                var response = new ExamRankingResponse
+                {
+                    ExamId = id,
+                    ExamTitle = exam.Title,
+                    CourseName = exam.Course?.Title,
+                    SubjectName = exam.Course?.Subject?.Name,
+                    Rankings = rankings,
+                    Statistics = statistics
+                };
+
+                return Ok(ApiResponse.SuccessResponse(response));
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi lấy bảng xếp hạng", 500));
+            }
+        }
+
+        private decimal CalculateMedian(List<decimal> values)
+        {
+            if (!values.Any()) return 0;
+
+            var sorted = values.OrderBy(x => x).ToList();
+            var count = sorted.Count;
+
+            if (count % 2 == 0)
+            {
+                return (sorted[count / 2 - 1] + sorted[count / 2]) / 2;
+            }
+            else
+            {
+                return sorted[count / 2];
+            }
+        }
+
+        /// <summary>
+        /// Demo User Sync - Lấy thông tin user hiện tại từ middleware
+        /// </summary>
+        [HttpGet("user-sync-demo")]
+        [Authorize]
+        public IActionResult GetUserSyncDemo()
+        {
+            try
+            {
+                // Sử dụng HttpContext Extension từ middleware
+                var syncedUser = HttpContext.GetSyncedUser();
+                var userId = HttpContext.GetSyncedUserId();
+                var userRole = HttpContext.GetSyncedUserRole();
+
+                if (syncedUser == null)
+                {
+                    return Unauthorized(ApiResponse.ErrorResponse("User not found or invalid token", 401));
+                }
+
+                _logger.LogInformation($"User {syncedUser.FullName} ({syncedUser.Email}) is accessing user sync demo");
+
+                return Ok(ApiResponse.SuccessResponse(new
+                {
+                    Message = "User sync demo - Thông tin user được đồng bộ từ AuthService",
+                    ServiceName = "ExamsService (Port 5002)",
+                    SyncedUser = syncedUser,
+                    Permissions = new
+                    {
+                        IsAdmin = HttpContext.IsAdmin(),
+                        IsTeacher = HttpContext.IsTeacher(),
+                        IsStudent = HttpContext.IsStudent()
+                    },
+                    AccessTime = DateTime.UtcNow
+                }));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in user sync demo");
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống", 500));
+            }
+        }
+
+        /// <summary>
+        /// Demo User Sync - Kiểm tra quyền truy cập theo role
+        /// </summary>
+        [HttpGet("role-check-demo")]
+        [Authorize]
+        public async Task<IActionResult> GetRoleCheckDemo()
+        {
+            try
+            {
+                var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+                if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+                {
+                    return Unauthorized(ApiResponse.ErrorResponse("Missing or invalid authorization header", 401));
+                }
+
+                var token = authHeader.Substring("Bearer ".Length).Trim();
+                var user = await _userSyncService.GetUserFromTokenAsync(token);
+
+                if (user == null)
+                {
+                    return Unauthorized(ApiResponse.ErrorResponse("Invalid token or user not found", 401));
+                }
+
+                // Kiểm tra quyền cho từng role
+                var adminPermission = await _userSyncService.ValidateUserPermissionAsync(user.UserId, "Admin");
+                var teacherPermission = await _userSyncService.ValidateUserPermissionAsync(user.UserId, "Teacher");
+                var studentPermission = await _userSyncService.ValidateUserPermissionAsync(user.UserId, "Student");
+
+                _logger.LogInformation($"Role check for user {user.FullName}: Admin={adminPermission}, Teacher={teacherPermission}, Student={studentPermission}");
+
+                return Ok(ApiResponse.SuccessResponse(new
+                {
+                    Message = "Role check demo - Kiểm tra quyền từ AuthService",
+                    ServiceName = "ExamsService (Port 5002)",
+                    User = user,
+                    RolePermissions = new
+                    {
+                        HasAdminPermission = adminPermission,
+                        HasTeacherPermission = teacherPermission,
+                        HasStudentPermission = studentPermission
+                    },
+                    CurrentRole = user.RoleName,
+                    CheckTime = DateTime.UtcNow
+                }));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in role check demo");
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống", 500));
             }
         }
     }

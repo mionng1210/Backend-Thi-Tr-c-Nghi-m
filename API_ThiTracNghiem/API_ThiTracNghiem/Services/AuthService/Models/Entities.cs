@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace AuthService.Models;
+namespace API_ThiTracNghiem.Services.AuthService.Models;
 
 public class User
 {

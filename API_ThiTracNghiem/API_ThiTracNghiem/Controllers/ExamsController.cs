@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using API_ThiTracNghiem.Contracts;
 using API_ThiTracNghiem.Models;
 using API_ThiTracNghiem.Infrastructure;
+using API_ThiTracNghiem.Services;
 using System.Security.Claims;
 
 namespace API_ThiTracNghiem.Controllers
@@ -197,6 +198,60 @@ namespace API_ThiTracNghiem.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, ApiResponse.Fail("Lỗi hệ thống khi xóa câu hỏi khỏi bài thi", 500));
+            }
+        }
+
+        /// <summary>
+        /// Tạo nhiều mã đề tự động dựa trên độ khó - Trộn câu hỏi
+        /// </summary>
+        [HttpPost("{id}/mix-questions")]
+        [Authorize(Roles = "Teacher,Admin")]
+        public async Task<IActionResult> MixQuestions(int id, [FromBody] MixQuestionsRequest request)
+        {
+            try
+            {
+                var teacherId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+                var result = await _examsService.MixQuestionsAsync(id, request, teacherId);
+                return Ok(ApiResponse.Success(result, "Tạo mã đề thành công"));
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ApiResponse.Fail(ex.Message, 400));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Forbid();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse.Fail("Lỗi hệ thống khi tạo mã đề", 500));
+            }
+        }
+
+        /// <summary>
+        /// Sinh đề cho thí sinh và lưu thời gian bắt đầu - Bắt đầu thi
+        /// </summary>
+        [HttpPost("{id}/start")]
+        [Authorize]
+        public async Task<IActionResult> StartExam(int id, [FromBody] StartExamRequest request)
+        {
+            try
+            {
+                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+                var result = await _examsService.StartExamAsync(id, request, userId);
+                return Ok(ApiResponse.Success(result, "Bắt đầu làm bài thi thành công"));
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ApiResponse.Fail(ex.Message, 400));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse.Fail(ex.Message, 400));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse.Fail("Lỗi hệ thống khi bắt đầu làm bài thi", 500));
             }
         }
     }

@@ -255,6 +255,7 @@ namespace API_ThiTracNghiem.Repositories
         {
             return await _db.ExamQuestions
                 .AsNoTracking()
+                .Include(eq => eq.Question)
                 .Where(eq => eq.ExamId == examId)
                 .OrderBy(eq => eq.SequenceIndex ?? eq.ExamQuestionId)
                 .ToListAsync();
@@ -287,6 +288,113 @@ namespace API_ThiTracNghiem.Repositories
                 .Where(e => e.ExamId == examId && !e.HasDelete)
                 .Include(e => e.Course)
                 .AnyAsync(e => e.Course != null && e.Course.TeacherId == teacherId);
+        }
+
+        public async Task<List<Question>> GetRandomQuestionsByDifficultyAsync(int examId, string difficulty, int count)
+        {
+            // Get the exam to find related subject/course
+            var exam = await _db.Exams
+                .AsNoTracking()
+                .Include(e => e.Course)
+                .FirstOrDefaultAsync(e => e.ExamId == examId && !e.HasDelete);
+
+            if (exam?.Course?.SubjectId == null)
+            {
+                return new List<Question>();
+            }
+
+            // Get question IDs first to avoid complex includes with random ordering
+            var questionIds = await _db.Questions
+                .AsNoTracking()
+                .Include(q => q.Bank)
+                .Where(q => !q.HasDelete && 
+                           q.Difficulty == difficulty &&
+                           q.Bank != null && 
+                           q.Bank.SubjectId == exam.Course.SubjectId)
+                .OrderBy(x => Guid.NewGuid()) // Random ordering
+                .Take(count)
+                .Select(q => q.QuestionId)
+                .ToListAsync();
+
+            // Now get the full questions with answer options
+            var questions = new List<Question>();
+            foreach (var questionId in questionIds)
+            {
+                var question = await _db.Questions
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(q => q.QuestionId == questionId);
+
+                if (question != null)
+                {
+                    // Get answer options separately to avoid tracking issues
+                    var answerOptions = await _db.AnswerOptions
+                        .AsNoTracking()
+                        .Where(ao => ao.QuestionId == questionId && !ao.HasDelete)
+                        .OrderBy(ao => ao.OrderIndex ?? ao.OptionId)
+                        .ToListAsync();
+
+                    // Create a new question object with options
+                    var questionWithOptions = new Question
+                    {
+                        QuestionId = question.QuestionId,
+                        BankId = question.BankId,
+                        Content = question.Content,
+                        QuestionType = question.QuestionType,
+                        Difficulty = question.Difficulty,
+                        Marks = question.Marks,
+                        TagsJson = question.TagsJson,
+                        CreatedBy = question.CreatedBy,
+                        CreatedAt = question.CreatedAt,
+                        UpdatedAt = question.UpdatedAt,
+                        HasDelete = question.HasDelete
+                    };
+
+                    questions.Add(questionWithOptions);
+                }
+            }
+
+            return questions;
+        }
+
+        public async Task<List<ExamQuestion>> GetExamQuestionsByVariantAsync(int examId, string variantCode)
+        {
+            // For now, return default exam questions since variant storage is not implemented
+            // In a full implementation, you would store variants in a separate table
+            return await GetExamQuestionsAsync(examId);
+        }
+
+        public async Task<ExamAttempt> CreateExamAttemptAsync(ExamAttempt examAttempt)
+        {
+            _db.ExamAttempts.Add(examAttempt);
+            await _db.SaveChangesAsync();
+            return examAttempt;
+        }
+
+        public async Task<ExamAttempt?> GetActiveExamAttemptAsync(int examId, int userId)
+        {
+            return await _db.ExamAttempts
+                .AsNoTracking()
+                .FirstOrDefaultAsync(ea => ea.ExamId == examId && 
+                                          ea.UserId == userId && 
+                                          ea.Status == "InProgress");
+        }
+
+        public async Task<List<ExamAttempt>> GetUserExamAttemptsAsync(int examId, int userId)
+        {
+            return await _db.ExamAttempts
+                .AsNoTracking()
+                .Where(ea => ea.ExamId == examId && ea.UserId == userId)
+                .OrderByDescending(ea => ea.StartedAt)
+                .ToListAsync();
+        }
+
+        public async Task<List<AnswerOption>> GetAnswerOptionsForQuestionAsync(int questionId)
+        {
+            return await _db.AnswerOptions
+                .AsNoTracking()
+                .Where(ao => ao.QuestionId == questionId && !ao.HasDelete)
+                .OrderBy(ao => ao.OrderIndex ?? ao.OptionId)
+                .ToListAsync();
         }
     }
 }
