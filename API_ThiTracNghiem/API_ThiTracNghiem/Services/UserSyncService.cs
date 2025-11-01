@@ -1,4 +1,4 @@
-using API_ThiTracNghiem.Shared.Contracts;
+using API_ThiTracNghiem.Contracts;
 using System.Text.Json;
 
 namespace API_ThiTracNghiem.Services

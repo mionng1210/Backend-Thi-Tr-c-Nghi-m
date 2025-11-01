@@ -1,5 +1,5 @@
 using API_ThiTracNghiem.Services;
-using API_ThiTracNghiem.Shared.Contracts;
+using API_ThiTracNghiem.Contracts;
 using System.Security.Claims;
 
 namespace API_ThiTracNghiem.Middleware

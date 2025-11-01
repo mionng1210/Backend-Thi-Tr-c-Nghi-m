@@ -24,6 +24,8 @@ namespace ExamsService.DTOs
         public DateTime? EndAt { get; set; }
         public string? Status { get; set; }
         public DateTime CreatedAt { get; set; }
+        public int? CreatedBy { get; set; }
+        public string? CreatedByName { get; set; }
     }
 
     // DTO for exam details with questions
@@ -49,6 +51,8 @@ namespace ExamsService.DTOs
         public bool AllowMultipleAttempts { get; set; }
         public string? Status { get; set; }
         public DateTime CreatedAt { get; set; }
+        public int? CreatedBy { get; set; }
+        public string? CreatedByName { get; set; }
         public List<ExamQuestionDto> Questions { get; set; } = new();
     }
 

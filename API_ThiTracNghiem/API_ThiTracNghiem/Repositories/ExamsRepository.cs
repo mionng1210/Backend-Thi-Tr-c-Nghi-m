@@ -28,6 +28,7 @@ namespace API_ThiTracNghiem.Repositories
                 .ThenInclude(c => c!.Teacher)
                 .Include(e => e.Course)
                 .ThenInclude(c => c!.Subject)
+                .Include(e => e.Creator)
                 .AsQueryable();
 
             // Apply filters
@@ -73,7 +74,9 @@ namespace API_ThiTracNghiem.Repositories
                     EndAt = e.EndAt,
                     Status = e.Status,
                     CreatedAt = e.CreatedAt,
-                    UpdatedAt = e.UpdatedAt
+                    UpdatedAt = e.UpdatedAt,
+                    CreatedBy = e.CreatedBy,
+                    CreatedByName = e.Creator != null ? e.Creator.FullName : null
                 })
                 .ToListAsync();
 
@@ -119,6 +122,16 @@ namespace API_ThiTracNghiem.Repositories
                 subject = await _db.Subjects
                     .AsNoTracking()
                     .Where(s => s.SubjectId == course.SubjectId)
+                    .FirstOrDefaultAsync();
+            }
+
+            // Get creator info separately if exam has CreatedBy
+            User? creator = null;
+            if (exam.CreatedBy != null)
+            {
+                creator = await _db.Users
+                    .AsNoTracking()
+                    .Where(u => u.UserId == exam.CreatedBy)
                     .FirstOrDefaultAsync();
             }
 
@@ -188,6 +201,8 @@ namespace API_ThiTracNghiem.Repositories
                 Status = exam.Status,
                 CreatedAt = exam.CreatedAt,
                 UpdatedAt = exam.UpdatedAt,
+                CreatedBy = exam.CreatedBy,
+                CreatedByName = creator?.FullName,
                 Questions = questions
             };
         }

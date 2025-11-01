@@ -48,6 +48,7 @@ namespace ExamsService.Controllers
                     .ThenInclude(c => c!.Teacher)
                     .Include(e => e.Course)
                     .ThenInclude(c => c!.Subject)
+                    .Include(e => e.Creator)
                     .AsQueryable();
 
                 // Apply filters
@@ -92,7 +93,9 @@ namespace ExamsService.Controllers
                         StartAt = e.StartAt,
                         EndAt = e.EndAt,
                         Status = e.Status,
-                        CreatedAt = e.CreatedAt
+                        CreatedAt = e.CreatedAt,
+                        CreatedBy = e.CreatedBy,
+                        CreatedByName = e.Creator != null ? e.Creator.FullName : null
                     })
                     .ToListAsync();
 
@@ -154,6 +157,16 @@ namespace ExamsService.Controllers
                     subject = await _context.Subjects
                         .AsNoTracking()
                         .Where(s => s.SubjectId == course.SubjectId)
+                        .FirstOrDefaultAsync();
+                }
+
+                // Get creator info separately if exam has CreatedBy
+                User? creator = null;
+                if (exam.CreatedBy != null)
+                {
+                    creator = await _context.Users
+                        .AsNoTracking()
+                        .Where(u => u.UserId == exam.CreatedBy)
                         .FirstOrDefaultAsync();
                 }
 
@@ -222,6 +235,8 @@ namespace ExamsService.Controllers
                     AllowMultipleAttempts = exam.AllowMultipleAttempts,
                     Status = exam.Status,
                     CreatedAt = exam.CreatedAt,
+                    CreatedBy = exam.CreatedBy,
+                    CreatedByName = creator?.FullName,
                     Questions = questions
                 };
 
@@ -785,7 +800,11 @@ namespace ExamsService.Controllers
         {
             try
             {
-                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+                var userId = HttpContext.GetSyncedUserId();
+                if (userId == null)
+                {
+                    return Unauthorized(ApiResponse.ErrorResponse("Không thể xác thực người dùng", 401));
+                }
 
                 // Validate exam exists
                 var exam = await _context.Exams
@@ -817,7 +836,7 @@ namespace ExamsService.Controllers
 
                 // Check if user already has an active attempt
                 var existingAttempt = await _context.ExamAttempts
-                    .FirstOrDefaultAsync(ea => ea.ExamId == id && ea.UserId == userId && 
+                    .FirstOrDefaultAsync(ea => ea.ExamId == id && ea.UserId == userId.Value && 
                                              ea.Status == "InProgress" && !ea.HasDelete);
 
                 if (existingAttempt != null)
@@ -829,7 +848,7 @@ namespace ExamsService.Controllers
                 if (!exam.AllowMultipleAttempts)
                 {
                     var previousAttempts = await _context.ExamAttempts
-                        .CountAsync(ea => ea.ExamId == id && ea.UserId == userId && !ea.HasDelete);
+                        .CountAsync(ea => ea.ExamId == id && ea.UserId == userId.Value && !ea.HasDelete);
 
                     if (previousAttempts > 0)
                     {
@@ -854,7 +873,7 @@ namespace ExamsService.Controllers
                 var examAttempt = new ExamAttempt
                 {
                     ExamId = id,
-                    UserId = userId,
+                    UserId = userId.Value,
                     VariantCode = request.VariantCode,
                     StartTime = now,
                     EndTime = exam.DurationMinutes.HasValue ? now.AddMinutes(exam.DurationMinutes.Value) : null,
@@ -928,9 +947,9 @@ namespace ExamsService.Controllers
         {
             try
             {
-                // Get current user ID (assuming from JWT token)
-                var userIdClaim = User.FindFirst("UserId")?.Value;
-                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                // Get current user ID from UserSyncMiddleware
+                var userId = HttpContext.GetSyncedUserId();
+                if (!userId.HasValue)
                 {
                     return Unauthorized(ApiResponse.ErrorResponse("Không thể xác thực người dùng", 401));
                 }
@@ -938,7 +957,7 @@ namespace ExamsService.Controllers
                 // Find the active exam attempt
                 var examAttempt = await _context.ExamAttempts
                     .Include(ea => ea.Exam)
-                    .FirstOrDefaultAsync(ea => ea.ExamId == id && ea.UserId == userId && ea.Status == "InProgress");
+                    .FirstOrDefaultAsync(ea => ea.ExamId == id && ea.UserId == userId.Value && ea.Status == "InProgress");
 
                 if (examAttempt == null)
                 {
@@ -1091,16 +1110,16 @@ namespace ExamsService.Controllers
         {
             try
             {
-                // Get current user ID for authorization
-                var currentUserIdClaim = User.FindFirst("UserId")?.Value;
-                if (string.IsNullOrEmpty(currentUserIdClaim) || !int.TryParse(currentUserIdClaim, out int currentUserId))
+                // Get current user ID from UserSyncMiddleware
+                var currentUserId = HttpContext.GetSyncedUserId();
+                if (!currentUserId.HasValue)
                 {
                     return Unauthorized(ApiResponse.ErrorResponse("Không thể xác thực người dùng", 401));
                 }
 
                 // Check if user can access these results (either own results or admin/teacher)
-                var userRole = User.FindFirst("Role")?.Value;
-                if (currentUserId != userId && userRole != "Admin" && userRole != "Teacher")
+                var userRole = HttpContext.GetSyncedUserRole();
+                if (currentUserId.Value != userId && userRole != "Admin" && userRole != "Teacher")
                 {
                     return StatusCode(403, ApiResponse.ErrorResponse("Không có quyền truy cập kết quả này", 403));
                 }

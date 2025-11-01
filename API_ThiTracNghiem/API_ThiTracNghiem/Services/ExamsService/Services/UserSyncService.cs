@@ -53,7 +53,7 @@ namespace API_ThiTracNghiem.Services
                     {
                         PropertyNameCaseInsensitive = true
                     });
-                    return result?.Data;
+                    return result?.User;
                 }
 
                 _logger.LogWarning($"Failed to get user {userId} from AuthService: {response.StatusCode}");
@@ -80,7 +80,7 @@ namespace API_ThiTracNghiem.Services
                     return null;
                 }
 
-                var response = await _httpClient.GetAsync($"{authServiceUrl}/api/UserSync/by-email/{Uri.EscapeDataString(email)}");
+                var response = await _httpClient.GetAsync($"{authServiceUrl}/api/UserSync/user/email/{Uri.EscapeDataString(email)}");
                 
                 if (response.IsSuccessStatusCode)
                 {
@@ -89,7 +89,7 @@ namespace API_ThiTracNghiem.Services
                     {
                         PropertyNameCaseInsensitive = true
                     });
-                    return result?.Data;
+                    return result?.User;
                 }
 
                 _logger.LogWarning($"Failed to get user {email} from AuthService: {response.StatusCode}");
@@ -116,11 +116,10 @@ namespace API_ThiTracNghiem.Services
                     return null;
                 }
 
-                var request = new UserSyncRequest { Token = token };
-                var json = JsonSerializer.Serialize(request);
-                var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+                // Set Authorization header with the token
+                _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
-                var response = await _httpClient.PostAsync($"{authServiceUrl}/api/UserSync/from-token", content);
+                var response = await _httpClient.GetAsync($"{authServiceUrl}/api/UserSync/user/current");
                 
                 if (response.IsSuccessStatusCode)
                 {
@@ -129,7 +128,7 @@ namespace API_ThiTracNghiem.Services
                     {
                         PropertyNameCaseInsensitive = true
                     });
-                    return result?.Data;
+                    return result?.User;
                 }
 
                 _logger.LogWarning($"Failed to get user from token from AuthService: {response.StatusCode}");
@@ -139,6 +138,11 @@ namespace API_ThiTracNghiem.Services
             {
                 _logger.LogError(ex, "Error getting user from token from AuthService");
                 return null;
+            }
+            finally
+            {
+                // Clear the Authorization header to avoid affecting other requests
+                _httpClient.DefaultRequestHeaders.Authorization = null;
             }
         }
 

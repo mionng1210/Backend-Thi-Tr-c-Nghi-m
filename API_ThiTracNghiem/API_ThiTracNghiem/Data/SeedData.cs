@@ -846,6 +846,74 @@ namespace API_ThiTracNghiem.Data
                 context.AnswerOptions.AddRange(answerOptions);
                 await context.SaveChangesAsync();
             }
+
+            // Seed Exams (Bài thi)
+            if (!await context.Exams.AnyAsync())
+            {
+                var courseIds = await context.Courses.OrderBy(c => c.CourseId).Select(c => c.CourseId).ToListAsync();
+                var teacherIds = await context.Users.Where(u => u.RoleId == 2).OrderBy(u => u.UserId).Select(u => u.UserId).ToListAsync();
+
+                var exams = new List<Exam>
+                {
+                    new Exam
+                    {
+                        Title = "Kiểm tra C# cơ bản",
+                        Description = "Bài kiểm tra về kiến thức C# cơ bản",
+                        CourseId = courseIds.FirstOrDefault(),
+                        DurationMinutes = 60,
+                        TotalQuestions = 10,
+                        TotalMarks = 100,
+                        PassingMark = 60,
+                        ExamType = "Quiz",
+                        StartAt = DateTime.UtcNow.AddDays(1),
+                        EndAt = DateTime.UtcNow.AddDays(7),
+                        RandomizeQuestions = true,
+                        AllowMultipleAttempts = false,
+                        Status = "Active",
+                        CreatedBy = teacherIds.FirstOrDefault(),
+                        CreatedAt = DateTime.UtcNow.AddDays(-5)
+                    },
+                    new Exam
+                    {
+                        Title = "Thi cuối kỳ SQL Server",
+                        Description = "Bài thi cuối kỳ về SQL Server và thiết kế cơ sở dữ liệu",
+                        CourseId = courseIds.Skip(1).FirstOrDefault(),
+                        DurationMinutes = 120,
+                        TotalQuestions = 20,
+                        TotalMarks = 200,
+                        PassingMark = 120,
+                        ExamType = "Final",
+                        StartAt = DateTime.UtcNow.AddDays(3),
+                        EndAt = DateTime.UtcNow.AddDays(10),
+                        RandomizeQuestions = false,
+                        AllowMultipleAttempts = false,
+                        Status = "Active",
+                        CreatedBy = teacherIds.Skip(1).FirstOrDefault(),
+                        CreatedAt = DateTime.UtcNow.AddDays(-3)
+                    },
+                    new Exam
+                    {
+                        Title = "Kiểm tra ASP.NET Core",
+                        Description = "Bài kiểm tra về ASP.NET Core Web API",
+                        CourseId = courseIds.Skip(2).FirstOrDefault(),
+                        DurationMinutes = 90,
+                        TotalQuestions = 15,
+                        TotalMarks = 150,
+                        PassingMark = 90,
+                        ExamType = "Midterm",
+                        StartAt = DateTime.UtcNow.AddDays(2),
+                        EndAt = DateTime.UtcNow.AddDays(8),
+                        RandomizeQuestions = true,
+                        AllowMultipleAttempts = true,
+                        Status = "Draft",
+                        CreatedBy = teacherIds.Skip(2).FirstOrDefault(),
+                        CreatedAt = DateTime.UtcNow.AddDays(-2)
+                    }
+                };
+
+                context.Exams.AddRange(exams);
+                await context.SaveChangesAsync();
+            }
         }
     }
 }
