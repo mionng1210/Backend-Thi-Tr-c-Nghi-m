@@ -1311,6 +1311,17 @@ namespace ExamsService.Controllers
             }
         }
 
+        private decimal CalculateStandardDeviation(List<decimal> values)
+        {
+            if (!values.Any()) return 0;
+            
+            var average = values.Average();
+            var sumOfSquares = values.Sum(x => (double)Math.Pow((double)(x - average), 2));
+            var variance = sumOfSquares / values.Count;
+            
+            return (decimal)Math.Sqrt(variance);
+        }
+
         /// <summary>
         /// Demo User Sync - Lấy thông tin user hiện tại từ middleware
         /// </summary>
@@ -1404,5 +1415,435 @@ namespace ExamsService.Controllers
                 return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống", 500));
             }
         }
+
+        /// <summary>
+        /// Lấy danh sách điểm thi của học viên cho một bài thi cụ thể
+        /// </summary>
+        [HttpGet("exam-results/{examId}")]
+        public async Task<IActionResult> GetExamResults(int examId)
+        {
+            try
+            {
+                // Check if exam exists
+                var exam = await _context.Exams
+                    .Include(e => e.Course)
+                        .ThenInclude(c => c!.Subject)
+                    .FirstOrDefaultAsync(e => e.ExamId == examId && !e.HasDelete);
+
+                if (exam == null)
+                {
+                    return NotFound(ApiResponse.ErrorResponse("Không tìm thấy bài thi", 404));
+                }
+
+                // Get all completed exam attempts for this exam
+                var examAttempts = await _context.ExamAttempts
+                    .Include(ea => ea.User)
+                    .Where(ea => ea.ExamId == examId && ea.IsSubmitted && !ea.HasDelete)
+                    .ToListAsync();
+
+                // Group by user to get best attempt for each user
+                var bestAttempts = examAttempts
+                    .GroupBy(ea => ea.UserId)
+                    .Select(g => g.OrderByDescending(ea => ea.Score)
+                                  .ThenBy(ea => ea.TimeSpentMinutes)
+                                  .ThenBy(ea => ea.SubmittedAt)
+                                  .First())
+                    .OrderByDescending(ea => ea.Score)
+                    .ToList();
+
+                // Create student scores list
+                var studentScores = bestAttempts.Select((attempt, index) => new StudentScoreDto
+                {
+                    UserId = attempt.UserId,
+                    UserName = attempt.User?.FullName ?? attempt.User?.Email ?? "Unknown",
+                    UserEmail = attempt.User?.Email,
+                    Score = attempt.Score ?? 0,
+                    MaxScore = exam.TotalMarks ?? 0,
+                    Percentage = exam.TotalMarks > 0 ? (decimal)((attempt.Score ?? 0) / exam.TotalMarks * 100) : 0,
+                    IsPassed = (attempt.Score ?? 0) >= (exam.PassingMark ?? 0),
+                    SubmittedAt = attempt.SubmittedAt ?? DateTime.UtcNow,
+                    TimeSpentMinutes = attempt.TimeSpentMinutes ?? 0,
+                    AttemptNumber = examAttempts.Count(ea => ea.UserId == attempt.UserId)
+                }).ToList();
+
+                // Calculate statistics
+                var scores = studentScores.Select(s => s.Score).ToList();
+                var percentages = studentScores.Select(s => s.Percentage).ToList();
+
+                var statistics = new ExamScoreStatistics
+                {
+                    TotalStudents = studentScores.Count,
+                    PassedStudents = studentScores.Count(s => s.IsPassed),
+                    FailedStudents = studentScores.Count(s => !s.IsPassed),
+                    AverageScore = scores.Any() ? scores.Average() : 0,
+                    HighestScore = scores.Any() ? scores.Max() : 0,
+                    LowestScore = scores.Any() ? scores.Min() : 0,
+                    PassRate = studentScores.Any() ? (double)studentScores.Count(s => s.IsPassed) / studentScores.Count * 100 : 0,
+                    MedianScore = CalculateMedian(scores),
+                    StandardDeviation = CalculateStandardDeviation(scores)
+                };
+
+                var response = new ExamResultsSummaryDto
+                {
+                    ExamId = examId,
+                    ExamTitle = exam.Title,
+                    CourseName = exam.Course?.Title,
+                    SubjectName = exam.Course?.Subject?.Name,
+                    PassingMark = exam.PassingMark,
+                    StudentScores = studentScores,
+                    Statistics = statistics
+                };
+
+                return Ok(ApiResponse.SuccessResponse(response));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting exam results for exam {ExamId}", examId);
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi lấy kết quả thi", 500));
+            }
+        }
+
+        /// <summary>
+        /// Phân tích kết quả thi - tính toán tỉ lệ đúng/sai, câu hỏi khó
+        /// </summary>
+        [HttpGet("exam-results/{examId}/analysis")]
+        public async Task<IActionResult> GetExamAnalysis(int examId)
+        {
+            try
+            {
+                // Check if exam exists
+                var exam = await _context.Exams
+                    .FirstOrDefaultAsync(e => e.ExamId == examId && !e.HasDelete);
+
+                if (exam == null)
+                {
+                    return NotFound(ApiResponse.ErrorResponse("Không tìm thấy bài thi", 404));
+                }
+
+                // Get exam questions
+                var examQuestions = await _context.ExamQuestions
+                    .Include(eq => eq.Question)
+                        .ThenInclude(q => q.AnswerOptions)
+                    .Where(eq => eq.ExamId == examId && !eq.HasDelete && !eq.Question.HasDelete)
+                    .ToListAsync();
+
+                // Get all exam attempts for this exam that are submitted
+                var submittedExamAttempts = await _context.ExamAttempts
+                    .Where(ea => ea.ExamId == examId)
+                    .Where(ea => ea.IsSubmitted == true)
+                    .ToListAsync();
+                
+                var examAttemptIds = submittedExamAttempts.Select(ea => ea.ExamAttemptId).ToList();
+
+                Console.WriteLine($"Found {examAttemptIds.Count} exam attempts for exam {examId}");
+
+                // Check if we have any exam attempts
+                if (!examAttemptIds.Any())
+                {
+                    return Ok(new ApiResponse<object>
+                    {
+                        Success = true,
+                        Message = "No submitted exam attempts found for this exam",
+                        Data = new
+                        {
+                            ExamId = examId,
+                            TotalAttempts = 0,
+                            Questions = new List<object>()
+                        }
+                    });
+                }
+
+                // Get all submitted answers for these exam attempts
+                var submittedAnswers = new List<SubmittedAnswer>();
+                if (examAttemptIds.Any())
+                {
+                    // Get submitted answers by querying each exam attempt individually to avoid SQL syntax issues
+                    foreach (var attemptId in examAttemptIds)
+                    {
+                        var answersForAttempt = await _context.SubmittedAnswers
+                            .Where(sa => sa.ExamAttemptId == attemptId && sa.HasDelete == false)
+                            .ToListAsync();
+                        submittedAnswers.AddRange(answersForAttempt);
+                    }
+                }
+
+                // Get submitted answer options by querying each submitted answer individually
+                Console.WriteLine($"Found {submittedAnswers.Count} submitted answers");
+                
+                var submittedAnswerOptions = new List<SubmittedAnswerOption>();
+                
+                if (submittedAnswers.Any())
+                {
+                    Console.WriteLine("Querying SubmittedAnswerOptions individually...");
+                    foreach (var submittedAnswer in submittedAnswers)
+                    {
+                        var optionsForAnswer = await _context.SubmittedAnswerOptions
+                            .Where(sao => sao.SubmittedAnswerId == submittedAnswer.SubmittedAnswerId)
+                            .ToListAsync();
+                        submittedAnswerOptions.AddRange(optionsForAnswer);
+                    }
+                    Console.WriteLine($"Found {submittedAnswerOptions.Count} submitted answer options");
+                }
+                else
+                {
+                    Console.WriteLine("No submitted answers found, skipping SubmittedAnswerOptions query");
+                }
+
+                // Analyze each question
+                var questionAnalysis = new List<QuestionAnalysisDto>();
+                
+                foreach (var examQuestion in examQuestions)
+                {
+                    var question = examQuestion.Question;
+                    var questionAnswers = submittedAnswers.Where(sa => sa.QuestionId == question.QuestionId).ToList();
+                    
+                    var totalAttempts = questionAnswers.Count;
+                    var correctAnswers = questionAnswers.Count(sa => sa.IsCorrect);
+                    var incorrectAnswers = totalAttempts - correctAnswers;
+                    
+                    var correctPercentage = totalAttempts > 0 ? (double)correctAnswers / totalAttempts * 100 : 0;
+                    
+                    // Determine difficulty level based on correct percentage
+                    string difficultyLevel = correctPercentage >= 70 ? "Easy" : 
+                                           correctPercentage >= 40 ? "Medium" : "Hard";
+
+                    // Analyze answer options
+                    var optionAnalysis = question.AnswerOptions.Select(option => {
+                        // Get submitted answer IDs for this question
+                        var questionSubmittedAnswerIds = questionAnswers.Select(qa => qa.SubmittedAnswerId).ToList();
+                        
+                        // Count how many times this option was selected
+                        var optionSelections = submittedAnswerOptions
+                            .Where(sao => questionSubmittedAnswerIds.Contains(sao.SubmittedAnswerId) && sao.AnswerOptionId == option.OptionId)
+                            .Count();
+                            
+                        var selectionPercentage = totalAttempts > 0 ? (double)optionSelections / totalAttempts * 100 : 0;
+                        
+                        return new OptionAnalysisDto
+                        {
+                            OptionId = option.OptionId,
+                            OptionContent = option.Content,
+                            IsCorrect = option.IsCorrect,
+                            SelectionCount = optionSelections,
+                            SelectionPercentage = selectionPercentage
+                        };
+                    }).ToList();
+
+                    questionAnalysis.Add(new QuestionAnalysisDto
+                    {
+                        QuestionId = question.QuestionId,
+                        QuestionContent = question.Content,
+                        Difficulty = question.Difficulty,
+                        Marks = examQuestion.Marks ?? question.Marks ?? 0,
+                        TotalAttempts = totalAttempts,
+                        CorrectAnswers = correctAnswers,
+                        IncorrectAnswers = incorrectAnswers,
+                        CorrectPercentage = correctPercentage,
+                        IncorrectPercentage = 100 - correctPercentage,
+                        DifficultyLevel = difficultyLevel,
+                        OptionAnalysis = optionAnalysis
+                    });
+                }
+
+                // Calculate difficulty analysis
+                var difficultyAnalysis = new ExamDifficultyAnalysis
+                {
+                    EasyQuestions = questionAnalysis.Count(q => q.DifficultyLevel == "Easy"),
+                    MediumQuestions = questionAnalysis.Count(q => q.DifficultyLevel == "Medium"),
+                    HardQuestions = questionAnalysis.Count(q => q.DifficultyLevel == "Hard"),
+                    AverageCorrectPercentage = questionAnalysis.Any() ? questionAnalysis.Average(q => q.CorrectPercentage) : 0,
+                    MostDifficultQuestions = questionAnalysis
+                        .OrderBy(q => q.CorrectPercentage)
+                        .Take(5)
+                        .Select(q => q.QuestionContent.Length > 100 ? q.QuestionContent.Substring(0, 100) + "..." : q.QuestionContent)
+                        .ToList(),
+                    EasiestQuestions = questionAnalysis
+                        .OrderByDescending(q => q.CorrectPercentage)
+                        .Take(5)
+                        .Select(q => q.QuestionContent.Length > 100 ? q.QuestionContent.Substring(0, 100) + "..." : q.QuestionContent)
+                        .ToList()
+                };
+
+                // Create score distribution chart data
+                var examAttempts = await _context.ExamAttempts
+                    .Where(ea => ea.ExamId == examId && ea.IsSubmitted && !ea.HasDelete)
+                    .ToListAsync();
+
+                var scoreRanges = new[] { "0-20%", "21-40%", "41-60%", "61-80%", "81-100%" };
+                var scoreDistributionChart = scoreRanges.Select((string range) => {
+                    var (min, max) = range switch
+                    {
+                        "0-20%" => (0, 20),
+                        "21-40%" => (21, 40),
+                        "41-60%" => (41, 60),
+                        "61-80%" => (61, 80),
+                        "81-100%" => (81, 100),
+                        _ => (0, 0)
+                    };
+                    
+                    var count = examAttempts.Count((ExamAttempt ea) => {
+                        var percentage = exam.TotalMarks > 0 ? (ea.Score ?? 0) / exam.TotalMarks * 100 : 0;
+                        return percentage >= min && percentage <= max;
+                    });
+                    
+                    return new ChartDataDto
+                    {
+                        Label = range,
+                        Value = count,
+                        Color = range switch
+                        {
+                            "0-20%" => "#ff4444",
+                            "21-40%" => "#ff8800",
+                            "41-60%" => "#ffbb33",
+                            "61-80%" => "#00C851",
+                            "81-100%" => "#007E33",
+                            _ => "#cccccc"
+                        }
+                    };
+                }).ToList();
+
+                // Create question difficulty chart data
+                var questionDifficultyChart = new List<ChartDataDto>
+                {
+                    new ChartDataDto { Label = "Dễ", Value = difficultyAnalysis.EasyQuestions, Color = "#00C851" },
+                    new ChartDataDto { Label = "Trung bình", Value = difficultyAnalysis.MediumQuestions, Color = "#ffbb33" },
+                    new ChartDataDto { Label = "Khó", Value = difficultyAnalysis.HardQuestions, Color = "#ff4444" }
+                };
+
+                var response = new ExamAnalysisDto
+                {
+                    ExamId = examId,
+                    ExamTitle = exam.Title,
+                    QuestionAnalysis = questionAnalysis,
+                    DifficultyAnalysis = difficultyAnalysis,
+                    ScoreDistributionChart = scoreDistributionChart,
+                    QuestionDifficultyChart = questionDifficultyChart
+                };
+
+                return Ok(ApiResponse.SuccessResponse(response));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting exam analysis for exam {ExamId}", examId);
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi phân tích kết quả thi", 500));
+            }
+        }
+
+        /// <summary>
+        /// Tải chứng chỉ hoàn thành bài thi
+        /// </summary>
+        [HttpGet("certificates/{userId}/{examId}")]
+        public async Task<IActionResult> GetCertificate(int userId, int examId)
+        {
+            try
+            {
+                // Get current user for authorization
+                var currentUserId = HttpContext.GetSyncedUserId();
+                if (!currentUserId.HasValue)
+                {
+                    return Unauthorized(ApiResponse.ErrorResponse("Không thể xác thực người dùng", 401));
+                }
+
+                var userRole = HttpContext.GetSyncedUserRole();
+                
+                // Check if user can access this certificate (own certificate or admin/teacher)
+                if (currentUserId.Value != userId && userRole != "Admin" && userRole != "Teacher")
+                {
+                    return StatusCode(403, ApiResponse.ErrorResponse("Không có quyền truy cập chứng chỉ này", 403));
+                }
+
+                // Check if exam exists
+                var exam = await _context.Exams
+                    .Include(e => e.Course)
+                        .ThenInclude(c => c!.Subject)
+                    .FirstOrDefaultAsync(e => e.ExamId == examId && !e.HasDelete);
+
+                if (exam == null)
+                {
+                    return NotFound(ApiResponse.ErrorResponse("Không tìm thấy bài thi", 404));
+                }
+
+                // Check if user exists
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+                if (user == null)
+                {
+                    return NotFound(ApiResponse.ErrorResponse("Không tìm thấy người dùng", 404));
+                }
+
+                // Get best exam attempt for this user
+                var bestAttempt = await _context.ExamAttempts
+                    .Where(ea => ea.ExamId == examId && ea.UserId == userId && ea.IsSubmitted && !ea.HasDelete)
+                    .OrderByDescending(ea => ea.Score)
+                    .ThenBy(ea => ea.TimeSpentMinutes)
+                    .ThenBy(ea => ea.SubmittedAt)
+                    .FirstOrDefaultAsync();
+
+                if (bestAttempt == null)
+                {
+                    return NotFound(ApiResponse.ErrorResponse("Người dùng chưa hoàn thành bài thi này", 404));
+                }
+
+                // Check if user passed the exam
+                var score = bestAttempt.Score ?? 0;
+                var maxScore = exam.TotalMarks ?? 0;
+                var percentage = maxScore > 0 ? score / maxScore * 100 : 0;
+                var passingMark = exam.PassingMark ?? 0;
+                var isPassed = score >= passingMark;
+
+                if (!isPassed)
+                {
+                    var failureResponse = new CertificateGenerationResponse
+                    {
+                        IsEligible = false,
+                        Message = $"Điểm số ({score}/{maxScore}) chưa đạt chuẩn đầu ra ({passingMark}). Không thể tạo chứng chỉ.",
+                        Certificate = null
+                    };
+                    return Ok(ApiResponse.SuccessResponse(failureResponse));
+                }
+
+                // Generate certificate ID
+                var certificateId = $"CERT-{examId}-{userId}-{bestAttempt.SubmittedAt:yyyyMMdd}";
+                
+                // In a real implementation, you would generate a PDF here
+                // For now, we'll return a mock download URL
+                var downloadUrl = $"/api/certificates/download/{certificateId}.pdf";
+
+                var certificate = new CertificateDto
+                {
+                    UserId = userId,
+                    UserName = user.FullName ?? user.Email,
+                    UserEmail = user.Email,
+                    ExamId = examId,
+                    ExamTitle = exam.Title,
+                    CourseName = exam.Course?.Title,
+                    SubjectName = exam.Course?.Subject?.Name,
+                    Score = score,
+                    MaxScore = maxScore,
+                    Percentage = percentage,
+                    PassingMark = passingMark,
+                    IsPassed = isPassed,
+                    CompletedAt = bestAttempt.SubmittedAt ?? DateTime.UtcNow,
+                    CertificateId = certificateId,
+                    DownloadUrl = downloadUrl,
+                    IssuedAt = DateTime.UtcNow
+                };
+
+                var response = new CertificateGenerationResponse
+                {
+                    IsEligible = true,
+                    Message = "Chứng chỉ đã được tạo thành công",
+                    Certificate = certificate
+                };
+
+                return Ok(ApiResponse.SuccessResponse(response));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating certificate for user {UserId} and exam {ExamId}", userId, examId);
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi tạo chứng chỉ", 500));
+            }
+        }
+
+
     }
 }

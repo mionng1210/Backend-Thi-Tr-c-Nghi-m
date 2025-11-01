@@ -459,4 +459,130 @@ namespace ExamsService.DTOs
         public double PassRate { get; set; }
         public decimal MedianScore { get; set; }
     }
+
+    // DTO for exam results summary (for /api/results/{examId})
+    public class ExamResultsSummaryDto
+    {
+        public int ExamId { get; set; }
+        public string ExamTitle { get; set; } = string.Empty;
+        public string? CourseName { get; set; }
+        public string? SubjectName { get; set; }
+        public decimal? PassingMark { get; set; }
+        public List<StudentScoreDto> StudentScores { get; set; } = new();
+        public ExamScoreStatistics Statistics { get; set; } = new();
+    }
+
+    // DTO for individual student score
+    public class StudentScoreDto
+    {
+        public int UserId { get; set; }
+        public string UserName { get; set; } = string.Empty;
+        public string? UserEmail { get; set; }
+        public decimal Score { get; set; }
+        public decimal MaxScore { get; set; }
+        public decimal Percentage { get; set; }
+        public bool IsPassed { get; set; }
+        public DateTime SubmittedAt { get; set; }
+        public int TimeSpentMinutes { get; set; }
+        public int AttemptNumber { get; set; }
+    }
+
+    // DTO for exam score statistics
+    public class ExamScoreStatistics
+    {
+        public int TotalStudents { get; set; }
+        public int PassedStudents { get; set; }
+        public int FailedStudents { get; set; }
+        public decimal AverageScore { get; set; }
+        public decimal HighestScore { get; set; }
+        public decimal LowestScore { get; set; }
+        public double PassRate { get; set; }
+        public decimal MedianScore { get; set; }
+        public decimal StandardDeviation { get; set; }
+    }
+
+    // DTO for exam analysis (for /api/results/{examId}/analysis)
+    public class ExamAnalysisDto
+    {
+        public int ExamId { get; set; }
+        public string ExamTitle { get; set; } = string.Empty;
+        public List<QuestionAnalysisDto> QuestionAnalysis { get; set; } = new();
+        public ExamDifficultyAnalysis DifficultyAnalysis { get; set; } = new();
+        public List<ChartDataDto> ScoreDistributionChart { get; set; } = new();
+        public List<ChartDataDto> QuestionDifficultyChart { get; set; } = new();
+    }
+
+    // DTO for individual question analysis
+    public class QuestionAnalysisDto
+    {
+        public int QuestionId { get; set; }
+        public string QuestionContent { get; set; } = string.Empty;
+        public string? Difficulty { get; set; }
+        public decimal Marks { get; set; }
+        public int TotalAttempts { get; set; }
+        public int CorrectAnswers { get; set; }
+        public int IncorrectAnswers { get; set; }
+        public double CorrectPercentage { get; set; }
+        public double IncorrectPercentage { get; set; }
+        public string DifficultyLevel { get; set; } = string.Empty; // Easy, Medium, Hard based on correct percentage
+        public List<OptionAnalysisDto> OptionAnalysis { get; set; } = new();
+    }
+
+    // DTO for answer option analysis
+    public class OptionAnalysisDto
+    {
+        public int OptionId { get; set; }
+        public string OptionContent { get; set; } = string.Empty;
+        public bool IsCorrect { get; set; }
+        public int SelectionCount { get; set; }
+        public double SelectionPercentage { get; set; }
+    }
+
+    // DTO for exam difficulty analysis
+    public class ExamDifficultyAnalysis
+    {
+        public int EasyQuestions { get; set; }
+        public int MediumQuestions { get; set; }
+        public int HardQuestions { get; set; }
+        public double AverageCorrectPercentage { get; set; }
+        public List<string> MostDifficultQuestions { get; set; } = new();
+        public List<string> EasiestQuestions { get; set; } = new();
+    }
+
+    // DTO for chart data
+    public class ChartDataDto
+    {
+        public string Label { get; set; } = string.Empty;
+        public decimal Value { get; set; }
+        public string? Color { get; set; }
+    }
+
+    // DTO for certificate (for /api/certificates/{userId}/{examId})
+    public class CertificateDto
+    {
+        public int UserId { get; set; }
+        public string UserName { get; set; } = string.Empty;
+        public string? UserEmail { get; set; }
+        public int ExamId { get; set; }
+        public string ExamTitle { get; set; } = string.Empty;
+        public string? CourseName { get; set; }
+        public string? SubjectName { get; set; }
+        public decimal Score { get; set; }
+        public decimal MaxScore { get; set; }
+        public decimal Percentage { get; set; }
+        public decimal? PassingMark { get; set; }
+        public bool IsPassed { get; set; }
+        public DateTime CompletedAt { get; set; }
+        public string CertificateId { get; set; } = string.Empty;
+        public string DownloadUrl { get; set; } = string.Empty;
+        public DateTime IssuedAt { get; set; }
+    }
+
+    // DTO for certificate generation response
+    public class CertificateGenerationResponse
+    {
+        public bool IsEligible { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public CertificateDto? Certificate { get; set; }
+    }
 }
