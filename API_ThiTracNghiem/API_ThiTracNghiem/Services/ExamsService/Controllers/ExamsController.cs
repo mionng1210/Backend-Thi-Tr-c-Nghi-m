@@ -567,23 +567,60 @@ namespace ExamsService.Controllers
 
             try
             {
-                // Check if exam exists
-                var exam = await _context.Exams.FirstOrDefaultAsync(e => e.ExamId == examId && !e.HasDelete);
+                // Check if exam exists and get its course/subject info
+                var exam = await _context.Exams
+                    .Include(e => e.Course)
+                    .ThenInclude(c => c.Subject)
+                    .FirstOrDefaultAsync(e => e.ExamId == examId && !e.HasDelete);
+                
                 if (exam == null)
                 {
                     return NotFound(ApiResponse.ErrorResponse("Không tìm thấy bài thi", 404));
                 }
 
-                // Validate question IDs exist in question bank
+                // Validate question IDs exist in question bank and check subject compatibility
                 var existingQuestions = new List<Question>();
+                var incompatibleQuestions = new List<int>();
+                
                 foreach (var questionId in request.QuestionIds)
                 {
                     var question = await _context.Questions
+                        .Include(q => q.Bank)
+                        .ThenInclude(b => b.Subject)
                         .FirstOrDefaultAsync(q => q.QuestionId == questionId && !q.HasDelete);
+                    
                     if (question != null)
                     {
+                        // Check if question's subject matches exam's subject (if SubjectId is provided in request)
+                        if (request.SubjectId.HasValue)
+                        {
+                            if (question.Bank?.SubjectId != request.SubjectId.Value)
+                            {
+                                incompatibleQuestions.Add(questionId);
+                                continue;
+                            }
+                        }
+                        // If no SubjectId in request, check against exam's subject
+                        else if (exam.Course?.SubjectId.HasValue == true)
+                        {
+                            if (question.Bank?.SubjectId != exam.Course.SubjectId.Value)
+                            {
+                                incompatibleQuestions.Add(questionId);
+                                continue;
+                            }
+                        }
+                        
                         existingQuestions.Add(question);
                     }
+                }
+
+                // Report incompatible questions
+                if (incompatibleQuestions.Any())
+                {
+                    var examSubjectName = exam.Course?.Subject?.Name ?? "không xác định";
+                    return BadRequest(ApiResponse.ErrorResponse(
+                        $"Các câu hỏi sau không thuộc môn học '{examSubjectName}' của bài thi: {string.Join(", ", incompatibleQuestions)}", 
+                        400));
                 }
 
                 if (existingQuestions.Count != request.QuestionIds.Count)
@@ -646,7 +683,8 @@ namespace ExamsService.Controllers
                             QuestionType = question.QuestionType,
                             Difficulty = question.Difficulty,
                             Marks = examQuestion.Marks,
-                            SequenceIndex = examQuestion.SequenceIndex
+                            SequenceIndex = examQuestion.SequenceIndex,
+                            SubjectName = question.Bank?.Subject?.Name
                         });
                     }
 
@@ -675,7 +713,8 @@ namespace ExamsService.Controllers
                         {
                             ExamId = examId,
                             TotalQuestions = totalQuestions,
-                            TotalMarks = totalMarks
+                            TotalMarks = totalMarks,
+                            ExamSubject = exam.Course?.Subject?.Name
                         }
                     }, $"Đã thêm {request.QuestionIds.Count} câu hỏi vào bài thi thành công"));
                 }
