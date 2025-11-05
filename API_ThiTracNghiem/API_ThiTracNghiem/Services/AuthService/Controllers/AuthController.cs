@@ -173,7 +173,31 @@ public class AuthController : ControllerBase
         _db.AuthSessions.Add(session);
         await _db.SaveChangesAsync();
 
-        return Ok(new { token, expiresAt });
+        // Return full user info with token
+        var userResponse = new
+        {
+            user = new
+            {
+                userId = user.UserId,
+                email = user.Email,
+                phoneNumber = user.PhoneNumber,
+                fullName = user.FullName,
+                role = roleName?.ToLower() ?? "student",
+                gender = user.Gender,
+                dateOfBirth = user.DateOfBirth,
+                avatar = user.AvatarUrl,
+                isVerified = user.IsEmailVerified,
+                status = user.Status,
+                createdAt = user.CreatedAt
+            },
+            token = new
+            {
+                accessToken = token,
+                expiresAt = expiresAt
+            }
+        };
+
+        return Ok(userResponse);
     }
 
     [AllowAnonymous]

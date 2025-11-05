@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Ocelot" Version="24.0.1" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.*" />
@@ -21,16 +22,10 @@
     <PackageReference Include="CloudinaryDotNet" Version="1.27.0" />
   </ItemGroup>
 
-  <!-- Loại trừ mã nguồn của các project con trong thư mục con khỏi monolith -->
+  <!-- Các thư mục Services và Shared được giữ lại để compile -->
+  <!-- Loại trừ thư mục test -->
   <ItemGroup>
-    <Compile Remove="Services\**\*.cs" />
-    <Compile Remove="Shared\**\*.cs" />
-    <EmbeddedResource Remove="Services\**\*.*" />
-    <EmbeddedResource Remove="Shared\**\*.*" />
-    <None Remove="Services\**\*.*" />
-    <None Remove="Shared\**\*.*" />
-    <Content Remove="Services\**\*.*" />
-    <Content Remove="Shared\**\*.*" />
+    <Compile Remove="Services\**\*.Tests\**" />
   </ItemGroup>
 
 </Project>

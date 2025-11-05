@@ -90,9 +90,7 @@ app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapControllers();
-
-// Ensure database is created and seeded
+// Ensure database is created and seeded before building the app
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ExamsDbContext>();
@@ -101,6 +99,8 @@ using (var scope = app.Services.CreateScope())
     // Seed data
     await ExamsService.Data.SeedData.SeedAsync(dbContext);
 }
+
+app.MapControllers();
 
 app.Run();
 

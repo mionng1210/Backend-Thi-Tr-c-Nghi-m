@@ -9,7 +9,6 @@ using AuthService.Data;
 using AuthService.Services;
 using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -110,5 +109,4 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
-
 
