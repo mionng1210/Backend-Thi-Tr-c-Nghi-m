@@ -1,0 +1,20 @@
+# Keys and secrets (do not commit)
+API_ThiTracNghiem/API_ThiTracNghiem/wwwroot/keys/*.json
+API_ThiTracNghiem/wwwroot/keys/*.json
+**/wwwroot/keys/*.json
+
+# User secrets / environment configs
+**/appsettings.*.local.json
+**/appsettings.Local.json
+
+# Build outputs
+**/bin/
+**/obj/
+
+# Rider/VS Code/VS
+.idea/
+.vscode/
+*.user
+*.suo
+*.sln.docstates
+

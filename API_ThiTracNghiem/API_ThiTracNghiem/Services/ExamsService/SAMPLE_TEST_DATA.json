@@ -1,0 +1,217 @@
+[
+  {
+    "title": "Kiểm tra Toán học lớp 12 - Chương 1",
+    "description": "Bài kiểm tra về đạo hàm và ứng dụng của đạo hàm trong chương trình Toán 12",
+    "courseId": 1,
+    "durationMinutes": 90,
+    "totalQuestions": 20,
+    "totalMarks": 100,
+    "passingMark": 60,
+    "examType": "Quiz",
+    "startAt": "2025-01-25T08:00:00.000Z",
+    "endAt": "2025-01-25T18:00:00.000Z",
+    "randomizeQuestions": true,
+    "allowMultipleAttempts": false,
+    "status": "Active",
+    "questions": [
+      {
+        "questionId": 1,
+        "marks": 5,
+        "sequenceIndex": 1
+      },
+      {
+        "questionId": 2,
+        "marks": 5,
+        "sequenceIndex": 2
+      },
+      {
+        "questionId": 3,
+        "marks": 10,
+        "sequenceIndex": 3
+      },
+      {
+        "questionId": 4,
+        "marks": 10,
+        "sequenceIndex": 4
+      },
+      {
+        "questionId": 5,
+        "marks": 15,
+        "sequenceIndex": 5
+      }
+    ]
+  },
+  {
+    "title": "Kiểm tra Vật lý lớp 12 - Dao động cơ",
+    "description": "Bài kiểm tra về dao động điều hòa, con lắc đơn và con lắc lò xo",
+    "courseId": 2,
+    "durationMinutes": 60,
+    "totalQuestions": 15,
+    "totalMarks": 75,
+    "passingMark": 45,
+    "examType": "Test",
+    "startAt": "2025-01-26T09:00:00.000Z",
+    "endAt": "2025-01-26T17:00:00.000Z",
+    "randomizeQuestions": false,
+    "allowMultipleAttempts": true,
+    "status": "Active",
+    "questions": [
+      {
+        "questionId": 1,
+        "marks": 5,
+        "sequenceIndex": 1
+      },
+      {
+        "questionId": 2,
+        "marks": 5,
+        "sequenceIndex": 2
+      },
+      {
+        "questionId": 3,
+        "marks": 5,
+        "sequenceIndex": 3
+      },
+      {
+        "questionId": 6,
+        "marks": 10,
+        "sequenceIndex": 4
+      },
+      {
+        "questionId": 7,
+        "marks": 10,
+        "sequenceIndex": 5
+      }
+    ]
+  },
+  {
+    "title": "Kiểm tra Hóa học lớp 11 - Liên kết hóa học",
+    "description": "Bài kiểm tra về liên kết ion, liên kết cộng hóa trị và liên kết kim loại",
+    "courseId": 3,
+    "durationMinutes": 45,
+    "totalQuestions": 12,
+    "totalMarks": 60,
+    "passingMark": 36,
+    "examType": "Quiz",
+    "startAt": "2025-01-27T10:00:00.000Z",
+    "endAt": "2025-01-27T16:00:00.000Z",
+    "randomizeQuestions": true,
+    "allowMultipleAttempts": false,
+    "status": "Active",
+    "questions": [
+      {
+        "questionId": 1,
+        "marks": 5,
+        "sequenceIndex": 1
+      },
+      {
+        "questionId": 3,
+        "marks": 5,
+        "sequenceIndex": 2
+      },
+      {
+        "questionId": 4,
+        "marks": 5,
+        "sequenceIndex": 3
+      },
+      {
+        "questionId": 8,
+        "marks": 10,
+        "sequenceIndex": 4
+      },
+      {
+        "questionId": 9,
+        "marks": 10,
+        "sequenceIndex": 5
+      }
+    ]
+  },
+  {
+    "title": "Kiểm tra Sinh học lớp 10 - Tế bào",
+    "description": "Bài kiểm tra về cấu trúc tế bào, màng sinh chất và các bào quan",
+    "courseId": 1,
+    "durationMinutes": 75,
+    "totalQuestions": 18,
+    "totalMarks": 90,
+    "passingMark": 54,
+    "examType": "Midterm",
+    "startAt": "2025-01-28T08:30:00.000Z",
+    "endAt": "2025-01-28T17:30:00.000Z",
+    "randomizeQuestions": false,
+    "allowMultipleAttempts": false,
+    "status": "Draft",
+    "questions": [
+      {
+        "questionId": 2,
+        "marks": 5,
+        "sequenceIndex": 1
+      },
+      {
+        "questionId": 4,
+        "marks": 5,
+        "sequenceIndex": 2
+      },
+      {
+        "questionId": 5,
+        "marks": 10,
+        "sequenceIndex": 3
+      },
+      {
+        "questionId": 6,
+        "marks": 10,
+        "sequenceIndex": 4
+      },
+      {
+        "questionId": 10,
+        "marks": 15,
+        "sequenceIndex": 5
+      }
+    ]
+  },
+  {
+    "title": "Kiểm tra Tiếng Anh lớp 12 - Reading Comprehension",
+    "description": "Bài kiểm tra kỹ năng đọc hiểu và từ vựng tiếng Anh nâng cao",
+    "courseId": 2,
+    "durationMinutes": 120,
+    "totalQuestions": 25,
+    "totalMarks": 125,
+    "passingMark": 75,
+    "examType": "Final",
+    "startAt": "2025-01-29T07:00:00.000Z",
+    "endAt": "2025-01-29T19:00:00.000Z",
+    "randomizeQuestions": true,
+    "allowMultipleAttempts": false,
+    "status": "Active",
+    "questions": [
+      {
+        "questionId": 1,
+        "marks": 5,
+        "sequenceIndex": 1
+      },
+      {
+        "questionId": 3,
+        "marks": 5,
+        "sequenceIndex": 2
+      },
+      {
+        "questionId": 5,
+        "marks": 5,
+        "sequenceIndex": 3
+      },
+      {
+        "questionId": 7,
+        "marks": 10,
+        "sequenceIndex": 4
+      },
+      {
+        "questionId": 8,
+        "marks": 10,
+        "sequenceIndex": 5
+      },
+      {
+        "questionId": 9,
+        "marks": 15,
+        "sequenceIndex": 6
+      }
+    ]
+  }
+]
