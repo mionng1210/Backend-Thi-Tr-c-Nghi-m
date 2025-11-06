@@ -6,6 +6,8 @@ using System.Security.Claims;
 using System.Globalization;
 using API_ThiTracNghiem.Services.AuthService.Data;
 using API_ThiTracNghiem.Services.AuthService.DTOs;
+using API_ThiTracNghiem.Services.AuthService.Models;
+using API_ThiTracNghiem.Services.AuthService.Services;
 
 namespace API_ThiTracNghiem.Services.AuthService.Controllers;
 
@@ -15,10 +17,12 @@ namespace API_ThiTracNghiem.Services.AuthService.Controllers;
 public class AdminController : ControllerBase
 {
     private readonly AuthDbContext _db;
+    private readonly IEmailService _email;
     
-    public AdminController(AuthDbContext db)
+    public AdminController(AuthDbContext db, IEmailService email)
     {
         _db = db;
+        _email = email;
     }
 
     /// <summary>
@@ -36,7 +40,8 @@ public class AdminController : ControllerBase
         [FromQuery] int pageSize = 10,
         [FromQuery] string? search = null,
         [FromQuery] string? status = null,
-        [FromQuery] int? roleId = null)
+        [FromQuery] int? roleId = null,
+        [FromQuery] string? role = null)
     {
         // Kiểm tra quyền admin
         if (!await IsAdminAsync())
@@ -69,10 +74,15 @@ public class AdminController : ControllerBase
             query = query.Where(u => u.Status == status);
         }
 
-        // Apply role filter
+        // Apply role filter (by roleId or role name)
         if (roleId.HasValue)
         {
             query = query.Where(u => u.RoleId == roleId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(role))
+        {
+            var roleLower = role.ToLower();
+            query = query.Where(u => u.Role != null && u.Role.RoleName.ToLower() == roleLower);
         }
 
         // Get total count for pagination
@@ -266,6 +276,100 @@ public class AdminController : ControllerBase
     }
 
     /// <summary>
+    /// Cập nhật vai trò người dùng theo tên vai trò (Admin only)
+    /// </summary>
+    /// <param name="userId">ID của user cần đổi vai trò</param>
+    /// <param name="request">Body chứa tên vai trò, ví dụ: { "role": "student" }</param>
+    /// <returns>Thông tin user đã cập nhật</returns>
+    [HttpPut("users/{userId}/role")]
+    public async Task<IActionResult> UpdateUserRoleByName(int userId, [FromBody] AdminUpdateUserRoleRequest request)
+    {
+        // Kiểm tra quyền admin
+        if (!await IsAdminAsync())
+        {
+            return Forbid("Chỉ admin mới có thể truy cập endpoint này");
+        }
+
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var user = await _db.Users
+            .Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.UserId == userId && !u.HasDelete);
+
+        if (user == null)
+            return NotFound(new { message = "Không tìm thấy người dùng" });
+
+        var requestedRoleName = request.Role?.Trim();
+        if (string.IsNullOrWhiteSpace(requestedRoleName))
+            return BadRequest(new { message = "Role không được bỏ trống" });
+
+        // Tìm role theo tên, không phân biệt hoa thường
+        var targetRole = await _db.Roles
+            .FirstOrDefaultAsync(r => r.RoleName.ToLower() == requestedRoleName.ToLower());
+
+        if (targetRole == null)
+            return BadRequest(new { message = "Role không tồn tại" });
+
+        // Không cho phép đổi role của admin sang role khác ngoài Admin
+        if (user.Role?.RoleName?.ToLower() == "admin" && targetRole.RoleName.ToLower() != "admin")
+            return BadRequest(new { message = "Không thể thay đổi vai trò của admin" });
+
+        // Nếu vai trò không đổi, trả về kèm thông tin user
+        if (user.RoleId == targetRole.RoleId)
+        {
+            var unchangedUser = new GetUserResponse
+            {
+                UserId = user.UserId,
+                Email = user.Email,
+                PhoneNumber = user.PhoneNumber,
+                FullName = user.FullName,
+                RoleId = user.RoleId,
+                RoleName = user.Role != null ? user.Role.RoleName : null,
+                Gender = user.Gender,
+                DateOfBirth = user.DateOfBirth,
+                AvatarUrl = user.AvatarUrl,
+                Status = user.Status,
+                IsEmailVerified = user.IsEmailVerified,
+                CreatedAt = user.CreatedAt,
+                UpdatedAt = user.UpdatedAt,
+                LastLoginAt = user.LastLoginAt
+            };
+
+            return Ok(new { message = "Vai trò không thay đổi", user = unchangedUser });
+        }
+
+        user.RoleId = targetRole.RoleId;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+
+        var updatedUser = await _db.Users
+            .Include(u => u.Role)
+            .Where(u => u.UserId == userId && !u.HasDelete)
+            .Select(u => new GetUserResponse
+            {
+                UserId = u.UserId,
+                Email = u.Email,
+                PhoneNumber = u.PhoneNumber,
+                FullName = u.FullName,
+                RoleId = u.RoleId,
+                RoleName = u.Role != null ? u.Role.RoleName : null,
+                Gender = u.Gender,
+                DateOfBirth = u.DateOfBirth,
+                AvatarUrl = u.AvatarUrl,
+                Status = u.Status,
+                IsEmailVerified = u.IsEmailVerified,
+                CreatedAt = u.CreatedAt,
+                UpdatedAt = u.UpdatedAt,
+                LastLoginAt = u.LastLoginAt
+            })
+            .FirstOrDefaultAsync();
+
+        return Ok(updatedUser);
+    }
+
+    /// <summary>
     /// Mở khóa user (Admin only)
     /// </summary>
     /// <param name="id">ID của user cần mở khóa</param>
@@ -391,5 +495,144 @@ public class AdminController : ControllerBase
             .FirstOrDefaultAsync(u => u.UserId == currentUserId && !u.HasDelete);
 
         return user?.Role?.RoleName?.ToLower() == "admin";
+    }
+
+    /// <summary>
+    /// Lấy danh sách yêu cầu phân quyền (mặc định: pending)
+    /// </summary>
+    [HttpGet("permissions/requests")]
+    public async Task<IActionResult> GetPermissionRequests([FromQuery] string? status = "pending")
+    {
+        if (!await IsAdminAsync())
+        {
+            return Forbid("Chỉ admin mới có thể truy cập endpoint này");
+        }
+
+        var query = _db.Set<PermissionRequest>()
+            .Include(r => r.User)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            query = query.Where(r => r.Status == status);
+        }
+
+        var results = await query
+            .OrderByDescending(r => r.SubmittedAt)
+            .Select(r => new PermissionRequestItem
+            {
+                Id = r.PermissionRequestId,
+                UserId = r.UserId,
+                Email = r.User!.Email,
+                FullName = r.User!.FullName,
+                RequestedRoleId = r.RequestedRoleId,
+                Status = r.Status,
+                SubmittedAt = r.SubmittedAt,
+                ReviewedAt = r.ReviewedAt,
+                ReviewedById = r.ReviewedById,
+                RejectReason = r.RejectReason
+            })
+            .ToListAsync();
+
+        return Ok(new { requests = results, count = results.Count });
+    }
+
+    /// <summary>
+    /// Duyệt yêu cầu phân quyền và cập nhật role = Teacher
+    /// </summary>
+    [HttpPut("permissions/approve/{id}")]
+    public async Task<IActionResult> ApprovePermissionRequest(int id)
+    {
+        if (!await IsAdminAsync())
+        {
+            return Forbid("Chỉ admin mới có thể truy cập endpoint này");
+        }
+
+        var request = await _db.Set<PermissionRequest>().FirstOrDefaultAsync(r => r.PermissionRequestId == id);
+        if (request == null)
+            return NotFound(new { message = "Không tìm thấy yêu cầu" });
+
+        if (request.Status != "pending")
+            return BadRequest(new { message = "Yêu cầu đã được xử lý trước đó" });
+
+        var user = await _db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.UserId == request.UserId && !u.HasDelete);
+        if (user == null)
+            return NotFound(new { message = "Không tìm thấy người dùng" });
+
+        if (user.Role?.RoleName?.ToLower() == "admin")
+            return BadRequest(new { message = "Không thể thay đổi vai trò của admin" });
+
+        var teacherRoleId = await _db.Roles.Where(r => r.RoleName == "Teacher").Select(r => r.RoleId).FirstOrDefaultAsync();
+        if (teacherRoleId <= 0)
+            return StatusCode(500, new { message = "Role 'Teacher' không tồn tại" });
+
+        user.RoleId = teacherRoleId;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        var sub = User.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub)?.Value
+                  ?? User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
+        var currentAdminId = int.Parse(sub!);
+
+        request.Status = "approved";
+        request.ReviewedAt = DateTime.UtcNow;
+        request.ReviewedById = currentAdminId;
+        request.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+
+        // Gửi email thông báo
+        if (!string.IsNullOrWhiteSpace(user.Email))
+        {
+            var subject = "Yêu cầu trở thành giáo viên đã được duyệt";
+            var body = $"Chúc mừng {user.FullName}, yêu cầu trở thành giáo viên đã được duyệt. Bạn hiện có quyền Teacher.";
+            await _email.SendAsync(user.Email, subject, body);
+        }
+
+        return Ok(new { message = "Đã duyệt yêu cầu và cập nhật role = Teacher", userId = user.UserId });
+    }
+
+    /// <summary>
+    /// Từ chối yêu cầu phân quyền, ghi lý do và gửi email
+    /// </summary>
+    [HttpPut("permissions/reject/{id}")]
+    public async Task<IActionResult> RejectPermissionRequest(int id, [FromBody] RejectPermissionRequest requestBody)
+    {
+        if (!await IsAdminAsync())
+        {
+            return Forbid("Chỉ admin mới có thể truy cập endpoint này");
+        }
+
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var request = await _db.Set<PermissionRequest>().Include(r => r.User).FirstOrDefaultAsync(r => r.PermissionRequestId == id);
+        if (request == null)
+            return NotFound(new { message = "Không tìm thấy yêu cầu" });
+
+        if (request.Status != "pending")
+            return BadRequest(new { message = "Yêu cầu đã được xử lý trước đó" });
+
+        var sub = User.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub)?.Value
+                  ?? User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
+        var currentAdminId = int.Parse(sub!);
+
+        request.Status = "rejected";
+        request.RejectReason = requestBody.Reason;
+        request.ReviewedAt = DateTime.UtcNow;
+        request.ReviewedById = currentAdminId;
+        request.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+
+        // Gửi email thông báo
+        var userEmail = request.User?.Email;
+        if (!string.IsNullOrWhiteSpace(userEmail))
+        {
+            var subject = "Yêu cầu trở thành giáo viên đã bị từ chối";
+            var body = $"Xin chào {request.User?.FullName}, yêu cầu trở thành giáo viên đã bị từ chối. Lý do: {requestBody.Reason}.";
+            await _email.SendAsync(userEmail, subject, body);
+        }
+
+        return Ok(new { message = "Đã từ chối yêu cầu và gửi email thông báo", requestId = id });
     }
 }
