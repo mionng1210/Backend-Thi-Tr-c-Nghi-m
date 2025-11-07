@@ -18,11 +18,13 @@ public class AdminController : ControllerBase
 {
     private readonly AuthDbContext _db;
     private readonly IEmailService _email;
+    private readonly IConfiguration _config;
     
-    public AdminController(AuthDbContext db, IEmailService email)
+    public AdminController(AuthDbContext db, IEmailService email, IConfiguration config)
     {
         _db = db;
         _email = email;
+        _config = config;
     }
 
     /// <summary>
@@ -123,6 +125,71 @@ public class AdminController : ControllerBase
         };
 
         return Ok(response);
+    }
+
+    /// <summary>
+    /// Lấy danh sách báo cáo người dùng (proxy sang ChatService) - Admin only
+    /// </summary>
+    [HttpGet("reports")]
+    public async Task<IActionResult> GetUserReports([FromQuery] string? status = null)
+    {
+        if (!await IsAdminAsync())
+        {
+            return Forbid("Chỉ admin mới có thể truy cập endpoint này");
+        }
+
+        var baseUrl = _config["Services:ChatService:BaseUrl"];
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            return StatusCode(500, new { message = "Chưa cấu hình base URL của ChatService" });
+        }
+
+        var rawAuth = Request.Headers["Authorization"].ToString().Trim('"');
+        var token = rawAuth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? rawAuth[7..] : rawAuth;
+
+        using var client = new HttpClient { BaseAddress = new Uri(baseUrl) };
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+        var path = "/api/admin/reports" + (string.IsNullOrWhiteSpace(status) ? string.Empty : $"?status={Uri.EscapeDataString(status)}");
+        var resp = await client.GetAsync(path);
+        var content = await resp.Content.ReadAsStringAsync();
+        return new ContentResult { Content = content, ContentType = "application/json", StatusCode = (int)resp.StatusCode };
+    }
+
+    /// <summary>
+    /// Cập nhật trạng thái báo cáo: đang xử lý / đã xử lý (proxy sang ChatService)
+    /// </summary>
+    [HttpPut("reports/{id}")]
+    public async Task<IActionResult> UpdateReportStatus(int id, [FromBody] UpdateReportStatusRequest request)
+    {
+        if (!await IsAdminAsync())
+        {
+            return Forbid("Chỉ admin mới có thể truy cập endpoint này");
+        }
+
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        var baseUrl = _config["Services:ChatService:BaseUrl"];
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            return StatusCode(500, new { message = "Chưa cấu hình base URL của ChatService" });
+        }
+
+        var rawAuth = Request.Headers["Authorization"].ToString().Trim('"');
+        var token = rawAuth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? rawAuth[7..] : rawAuth;
+
+        using var client = new HttpClient { BaseAddress = new Uri(baseUrl) };
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+        var path = $"/api/admin/reports/{id}";
+        var body = System.Text.Json.JsonSerializer.Serialize(request);
+        var content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+        var resp = await client.PutAsync(path, content);
+        var respBody = await resp.Content.ReadAsStringAsync();
+        return new ContentResult { Content = respBody, ContentType = "application/json", StatusCode = (int)resp.StatusCode };
     }
 
     /// <summary>

@@ -14,6 +14,10 @@ namespace ChatService.Data
         public DbSet<ChatRoomMember> ChatRoomMembers { get; set; }
         public DbSet<User> Users { get; set; }
         public DbSet<Role> Roles { get; set; }
+        public DbSet<Feedback> Feedbacks { get; set; }
+        public DbSet<Notification> Notifications { get; set; }
+        public DbSet<NotificationSetting> NotificationSettings { get; set; }
+        public DbSet<Report> Reports { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -84,6 +88,51 @@ namespace ChatService.Data
                 
                 // Unique constraint for room-user combination
                 entity.HasIndex(crm => new { crm.RoomId, crm.UserId }).IsUnique();
+            });
+
+            // Configure Feedback
+            modelBuilder.Entity<Feedback>(entity =>
+            {
+                entity.HasKey(f => f.FeedbackId);
+                entity.Property(f => f.Stars).IsRequired();
+                entity.Property(f => f.Comment).HasMaxLength(1000);
+                entity.Property(f => f.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(f => f.HasDelete).HasDefaultValue(false);
+            });
+
+            // Configure Notification
+            modelBuilder.Entity<Notification>(entity =>
+            {
+                entity.HasKey(n => n.NotificationId);
+                entity.Property(n => n.Title).IsRequired().HasMaxLength(200);
+                entity.Property(n => n.Message).IsRequired().HasMaxLength(2000);
+                entity.Property(n => n.Type).HasMaxLength(50);
+                entity.Property(n => n.IsRead).HasDefaultValue(false);
+                entity.Property(n => n.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(n => n.HasDelete).HasDefaultValue(false);
+                entity.HasIndex(n => new { n.UserId, n.IsRead });
+            });
+
+            // Configure NotificationSetting
+            modelBuilder.Entity<NotificationSetting>(entity =>
+            {
+                entity.HasKey(ns => ns.SettingId);
+                entity.Property(ns => ns.EmailEnabled).HasDefaultValue(true);
+                entity.Property(ns => ns.PopupEnabled).HasDefaultValue(true);
+                entity.Property(ns => ns.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasIndex(ns => ns.UserId).IsUnique();
+            });
+
+            // Configure Report
+            modelBuilder.Entity<Report>(entity =>
+            {
+                entity.HasKey(r => r.ReportId);
+                entity.Property(r => r.Description).IsRequired().HasMaxLength(2000);
+                entity.Property(r => r.AttachmentPath).HasMaxLength(500);
+                entity.Property(r => r.Status).HasMaxLength(50).HasDefaultValue("Chưa xử lý");
+                entity.Property(r => r.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(r => r.HasDelete).HasDefaultValue(false);
+                entity.HasIndex(r => new { r.UserId, r.Status });
             });
         }
     }

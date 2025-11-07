@@ -153,4 +153,83 @@ namespace ChatService.Models
         // Navigation
         public ICollection<User> Users { get; set; } = new List<User>();
     }
+
+    // Feedback entity
+    public class Feedback
+    {
+        [Key]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+        public int FeedbackId { get; set; }
+
+        public int UserId { get; set; }
+
+        [Range(1, 5)]
+        public int Stars { get; set; }
+
+        [MaxLength(1000)]
+        public string? Comment { get; set; }
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public bool HasDelete { get; set; } = false;
+    }
+
+    // Notification entity
+    public class Notification
+    {
+        [Key]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+        public int NotificationId { get; set; }
+
+        public int UserId { get; set; }
+
+        [MaxLength(200)]
+        public string Title { get; set; } = string.Empty;
+
+        [MaxLength(2000)]
+        public string Message { get; set; } = string.Empty;
+
+        [MaxLength(50)]
+        public string? Type { get; set; }
+
+        public bool IsRead { get; set; } = false;
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public bool HasDelete { get; set; } = false;
+    }
+
+    // Notification settings entity (one per user)
+    public class NotificationSetting
+    {
+        [Key]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+        public int SettingId { get; set; }
+
+        public int UserId { get; set; }
+        public bool EmailEnabled { get; set; } = true;
+        public bool PopupEnabled { get; set; } = true;
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    }
+
+    // Report entity
+    public class Report
+    {
+        [Key]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+        public int ReportId { get; set; }
+
+        public int UserId { get; set; }
+
+        [Required]
+        [MaxLength(2000)]
+        public string Description { get; set; } = string.Empty;
+
+        [MaxLength(500)]
+        public string? AttachmentPath { get; set; }
+
+        [MaxLength(50)]
+        public string Status { get; set; } = "Chưa xử lý";
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? UpdatedAt { get; set; }
+        public bool HasDelete { get; set; } = false;
+    }
 }

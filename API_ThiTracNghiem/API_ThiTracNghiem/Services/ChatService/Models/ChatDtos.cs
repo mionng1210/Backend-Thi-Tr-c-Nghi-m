@@ -83,4 +83,71 @@ namespace ChatService.Models
         public string? Status { get; set; }
         public bool IsOnline { get; set; }
     }
+
+    // Feedback DTOs
+    public class SubmitFeedbackRequest
+    {
+        [Required]
+        [Range(1, 5)]
+        public int Stars { get; set; }
+
+        [MaxLength(1000)]
+        public string? Comment { get; set; }
+    }
+
+    // Notifications DTOs
+    public class NotificationResponse
+    {
+        public int NotificationId { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+        public string? Type { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public bool IsRead { get; set; }
+    }
+
+    public class UpdateNotificationSettingsRequest
+    {
+        public bool EmailEnabled { get; set; }
+        public bool PopupEnabled { get; set; }
+    }
+
+    // Reports DTOs
+    public class CreateReportRequest
+    {
+        [Required]
+        [MaxLength(2000)]
+        public string Description { get; set; } = string.Empty;
+    }
+
+    public class ReportResponse
+    {
+        public int ReportId { get; set; }
+        public string Description { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string? AttachmentPath { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+    }
+
+    // Admin Reports DTOs
+    public class AdminReportResponse
+    {
+        public int ReportId { get; set; }
+        public int UserId { get; set; }
+        public string? UserEmail { get; set; }
+        public string? UserFullName { get; set; }
+        public string Description { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string? AttachmentPath { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+    }
+
+    public class UpdateReportStatusRequest
+    {
+        [Required]
+        [MaxLength(50)]
+        public string Status { get; set; } = string.Empty; // "Đang xử lý" hoặc "Đã xử lý"
+    }
 }
