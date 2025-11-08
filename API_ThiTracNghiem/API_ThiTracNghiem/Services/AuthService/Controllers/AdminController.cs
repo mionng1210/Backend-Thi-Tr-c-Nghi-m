@@ -19,12 +19,14 @@ public class AdminController : ControllerBase
     private readonly AuthDbContext _db;
     private readonly IEmailService _email;
     private readonly IConfiguration _config;
+    private readonly IHttpClientFactory? _httpClientFactory;
     
-    public AdminController(AuthDbContext db, IEmailService email, IConfiguration config)
+    public AdminController(AuthDbContext db, IEmailService email, IConfiguration config, IHttpClientFactory? httpClientFactory = null)
     {
         _db = db;
         _email = email;
         _config = config;
+        _httpClientFactory = httpClientFactory;
     }
 
     /// <summary>
@@ -122,6 +124,173 @@ public class AdminController : ControllerBase
             Page = page,
             PageSize = pageSize,
             TotalPages = totalPages
+        };
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Thống kê tổng hợp cho admin: người dùng, yêu cầu phân quyền, doanh thu và thống kê bài thi (tùy chọn theo examId)
+    /// </summary>
+    [HttpGet("statistics")]
+    public async Task<IActionResult> GetAdminStatistics([FromQuery] int? examId = null)
+    {
+        if (!await IsAdminAsync())
+        {
+            return Forbid("Chỉ admin mới có thể truy cập endpoint này");
+        }
+
+        // User stats
+        var usersQuery = _db.Users.Include(u => u.Role).Where(u => !u.HasDelete);
+        var users = await usersQuery.ToListAsync();
+        var userStats = new API_ThiTracNghiem.Services.AuthService.DTOs.UserStatsDto
+        {
+            TotalUsers = users.Count,
+            TotalStudents = users.Count(u => (u.Role?.RoleName ?? string.Empty).Equals("Student", StringComparison.OrdinalIgnoreCase)),
+            TotalTeachers = users.Count(u => (u.Role?.RoleName ?? string.Empty).Equals("Teacher", StringComparison.OrdinalIgnoreCase)),
+            TotalAdmins = users.Count(u => (u.Role?.RoleName ?? string.Empty).Equals("Admin", StringComparison.OrdinalIgnoreCase)),
+            NewUsersLast7Days = users.Count(u => (u.CreatedAt) >= DateTime.UtcNow.AddDays(-7))
+        };
+
+        // Permission stats
+        var permissionsQuery = _db.Set<PermissionRequest>();
+        var permissions = await permissionsQuery.ToListAsync();
+        var successStatuses = new[] { "paid", "success", "completed" };
+        var paidAmount = permissions
+            .Where(r => r.PaymentAmount.HasValue && !string.IsNullOrWhiteSpace(r.PaymentStatus) && successStatuses.Contains(r.PaymentStatus!.ToLower()))
+            .Sum(r => r.PaymentAmount!.Value);
+
+        var permissionStats = new API_ThiTracNghiem.Services.AuthService.DTOs.PermissionStatsDto
+        {
+            PendingCount = permissions.Count(r => (r.Status ?? string.Empty).Equals("pending", StringComparison.OrdinalIgnoreCase)),
+            ApprovedCount = permissions.Count(r => (r.Status ?? string.Empty).Equals("approved", StringComparison.OrdinalIgnoreCase)),
+            RejectedCount = permissions.Count(r => (r.Status ?? string.Empty).Equals("rejected", StringComparison.OrdinalIgnoreCase)),
+            PaidAmount = paidAmount
+        };
+
+        // Revenue stats (tạm thời lấy từ PermissionRequests)
+        var revenueStats = new API_ThiTracNghiem.Services.AuthService.DTOs.RevenueStatsDto
+        {
+            TotalRevenue = paidAmount,
+            Currency = "VND",
+            Notes = "Bao gồm khoản phí duyệt quyền (PermissionRequests). Có thể mở rộng để tính doanh thu tài liệu từ MaterialsService."
+        };
+
+        API_ThiTracNghiem.Services.AuthService.DTOs.ExamStatsDto? examStats = null;
+
+        if (examId.HasValue)
+        {
+            var baseUrl = _config["Services:ExamsService:BaseUrl"];
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                return StatusCode(500, new { message = "Chưa cấu hình base URL của ExamsService" });
+            }
+
+            var rawAuth = Request.Headers["Authorization"].ToString().Trim('"');
+            var token = rawAuth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? rawAuth[7..] : rawAuth;
+
+            HttpClient client;
+            if (_httpClientFactory != null)
+            {
+                client = _httpClientFactory.CreateClient();
+                client.BaseAddress = new Uri(baseUrl);
+            }
+            else
+            {
+                client = new HttpClient { BaseAddress = new Uri(baseUrl) };
+            }
+            client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+            var path = $"/api/Exams/exam-results/{examId.Value}";
+            var resp = await client.GetAsync(path);
+            var content = await resp.Content.ReadAsStringAsync();
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                return StatusCode((int)resp.StatusCode, new { message = "Không thể lấy thống kê bài thi từ ExamsService", detail = content });
+            }
+
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(content);
+                var root = doc.RootElement;
+
+                // Lấy phần Data từ ApiResponse, hỗ trợ cả "Data" (PascalCase) và "data" (camelCase)
+                System.Text.Json.JsonElement dataEl;
+                if (root.ValueKind == System.Text.Json.JsonValueKind.Object && root.TryGetProperty("Data", out var dUpper) && dUpper.ValueKind != System.Text.Json.JsonValueKind.Undefined)
+                {
+                    dataEl = dUpper;
+                }
+                else if (root.ValueKind == System.Text.Json.JsonValueKind.Object && root.TryGetProperty("data", out var dLower) && dLower.ValueKind != System.Text.Json.JsonValueKind.Undefined)
+                {
+                    dataEl = dLower;
+                }
+                else
+                {
+                    dataEl = root;
+                }
+
+                // Hàm helper đọc an toàn
+                int ReadInt(System.Text.Json.JsonElement obj, string prop, int defVal = 0)
+                {
+                    if (obj.ValueKind == System.Text.Json.JsonValueKind.Object && obj.TryGetProperty(prop, out var p) && p.ValueKind == System.Text.Json.JsonValueKind.Number)
+                        return p.GetInt32();
+                    return defVal;
+                }
+
+                decimal ReadDecimal(System.Text.Json.JsonElement obj, string prop, decimal defVal = 0)
+                {
+                    if (obj.ValueKind == System.Text.Json.JsonValueKind.Object && obj.TryGetProperty(prop, out var p) && p.ValueKind == System.Text.Json.JsonValueKind.Number)
+                        return p.GetDecimal();
+                    return defVal;
+                }
+
+                double ReadDouble(System.Text.Json.JsonElement obj, string prop, double defVal = 0)
+                {
+                    if (obj.ValueKind == System.Text.Json.JsonValueKind.Object && obj.TryGetProperty(prop, out var p) && p.ValueKind == System.Text.Json.JsonValueKind.Number)
+                        return p.GetDouble();
+                    return defVal;
+                }
+
+                string? ReadString(System.Text.Json.JsonElement obj, string prop)
+                {
+                    if (obj.ValueKind == System.Text.Json.JsonValueKind.Object && obj.TryGetProperty(prop, out var p) && p.ValueKind == System.Text.Json.JsonValueKind.String)
+                        return p.GetString();
+                    return null;
+                }
+
+                // Đọc stats nếu có
+                System.Text.Json.JsonElement statsEl = default;
+                var hasStats = dataEl.ValueKind == System.Text.Json.JsonValueKind.Object && dataEl.TryGetProperty("Statistics", out statsEl) && statsEl.ValueKind == System.Text.Json.JsonValueKind.Object;
+
+                examStats = new API_ThiTracNghiem.Services.AuthService.DTOs.ExamStatsDto
+                {
+                    ExamId = ReadInt(dataEl, "ExamId", examId.Value),
+                    ExamTitle = ReadString(dataEl, "ExamTitle"),
+                    CourseName = ReadString(dataEl, "CourseName"),
+                    SubjectName = ReadString(dataEl, "SubjectName"),
+                    TotalStudents = hasStats ? ReadInt(statsEl, "TotalStudents") : 0,
+                    PassedStudents = hasStats ? ReadInt(statsEl, "PassedStudents") : 0,
+                    FailedStudents = hasStats ? ReadInt(statsEl, "FailedStudents") : 0,
+                    PassRate = hasStats ? ReadDouble(statsEl, "PassRate") : 0,
+                    AverageScore = hasStats ? ReadDecimal(statsEl, "AverageScore") : 0,
+                    HighestScore = hasStats ? ReadDecimal(statsEl, "HighestScore") : 0,
+                    LowestScore = hasStats ? ReadDecimal(statsEl, "LowestScore") : 0,
+                };
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Lỗi khi phân tích dữ liệu từ ExamsService", error = ex.Message });
+            }
+        }
+
+        var response = new API_ThiTracNghiem.Services.AuthService.DTOs.AdminStatisticsResponse
+        {
+            Users = userStats,
+            Permissions = permissionStats,
+            Revenue = revenueStats,
+            Exam = examStats,
+            GeneratedAt = DateTime.UtcNow
         };
 
         return Ok(response);

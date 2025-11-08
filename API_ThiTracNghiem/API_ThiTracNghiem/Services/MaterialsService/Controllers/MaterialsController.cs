@@ -31,10 +31,18 @@ public class MaterialsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> Get([FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 10)
+    public async Task<IActionResult> Get([FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
     {
-        var data = await _service.GetAsync(pageIndex, pageSize);
-        return Ok(data);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var data = await _service.SearchAsync(search!, pageIndex, pageSize);
+            return Ok(data);
+        }
+        else
+        {
+            var data = await _service.GetAsync(pageIndex, pageSize);
+            return Ok(data);
+        }
     }
 
     [HttpGet("{id}")]

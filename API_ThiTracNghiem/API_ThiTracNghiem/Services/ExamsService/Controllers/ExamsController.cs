@@ -1543,6 +1543,97 @@ namespace ExamsService.Controllers
         }
 
         /// <summary>
+        /// Lấy danh sách lịch thi cá nhân mà học sinh đã đăng ký/đã tham gia
+        /// (Tạm thời dựa trên các ExamAttempts của người dùng trong ExamsService)
+        /// </summary>
+        [HttpGet("my-schedule")]
+        [Authorize(Roles = "Student")]
+        public async Task<IActionResult> GetMySchedule()
+        {
+            try
+            {
+                var userId = HttpContext.GetSyncedUserId();
+                if (!userId.HasValue)
+                {
+                    return Unauthorized(ApiResponse.ErrorResponse("Không thể xác thực người dùng", 401));
+                }
+
+                var now = DateTime.UtcNow;
+
+                var attempts = await _context.ExamAttempts
+                    .Include(ea => ea.Exam)
+                        .ThenInclude(e => e.Course)
+                            .ThenInclude(c => c.Subject)
+                    .Where(ea => ea.UserId == userId.Value && !ea.HasDelete)
+                    .OrderByDescending(ea => ea.StartTime)
+                    .ToListAsync();
+
+                var items = new List<MyScheduleItemDto>();
+
+                foreach (var ea in attempts)
+                {
+                    var exam = ea.Exam;
+                    if (exam == null)
+                    {
+                        continue;
+                    }
+
+                    var attemptStatus = ea.IsSubmitted ? "Completed"
+                                      : (string.Equals(ea.Status, "InProgress", StringComparison.OrdinalIgnoreCase) ? "InProgress" : "NotStarted");
+
+                    string scheduleStatus;
+                    if (attemptStatus == "Completed")
+                    {
+                        scheduleStatus = "Completed";
+                    }
+                    else if (exam.StartAt.HasValue && now < exam.StartAt.Value)
+                    {
+                        scheduleStatus = "Upcoming";
+                    }
+                    else if (exam.EndAt.HasValue && now > exam.EndAt.Value)
+                    {
+                        scheduleStatus = "Expired";
+                    }
+                    else
+                    {
+                        scheduleStatus = "Ongoing";
+                    }
+
+                    items.Add(new MyScheduleItemDto
+                    {
+                        ExamId = exam.ExamId,
+                        ExamTitle = exam.Title,
+                        CourseId = exam.CourseId,
+                        CourseName = exam.Course?.Title,
+                        SubjectId = exam.Course?.SubjectId,
+                        SubjectName = exam.Course?.Subject?.Name,
+                        StartAt = exam.StartAt,
+                        EndAt = exam.EndAt,
+                        Status = scheduleStatus,
+                        AttemptStatus = attemptStatus,
+                        Score = ea.Score,
+                        AttemptStart = ea.StartTime,
+                        AttemptEnd = ea.EndTime,
+                        CompletedAt = ea.SubmittedAt
+                    });
+                }
+
+                var response = new MyScheduleResponse
+                {
+                    UserId = userId.Value,
+                    Items = items
+                };
+
+                return Ok(ApiResponse.SuccessResponse(response, "Lấy lịch thi cá nhân thành công"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while getting personal exam schedule");
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi lấy lịch thi", 500));
+            }
+        }
+
+        /// <summary>
         /// Phân tích kết quả thi - tính toán tỉ lệ đúng/sai, câu hỏi khó
         /// </summary>
         [HttpGet("exam-results/{examId}/analysis")]

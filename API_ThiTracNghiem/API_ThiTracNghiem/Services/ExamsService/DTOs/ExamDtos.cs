@@ -512,6 +512,32 @@ namespace ExamsService.DTOs
         public List<ChartDataDto> QuestionDifficultyChart { get; set; } = new();
     }
 
+    // DTO for personal exam schedule item
+    public class MyScheduleItemDto
+    {
+        public int ExamId { get; set; }
+        public string ExamTitle { get; set; } = string.Empty;
+        public int? CourseId { get; set; }
+        public string? CourseName { get; set; }
+        public int? SubjectId { get; set; }
+        public string? SubjectName { get; set; }
+        public DateTime? StartAt { get; set; }
+        public DateTime? EndAt { get; set; }
+        public string Status { get; set; } = "Unknown"; // Upcoming, Ongoing, Completed, Expired
+        public string AttemptStatus { get; set; } = "NotStarted"; // NotStarted, InProgress, Completed
+        public decimal? Score { get; set; }
+        public DateTime? AttemptStart { get; set; }
+        public DateTime? AttemptEnd { get; set; }
+        public DateTime? CompletedAt { get; set; }
+    }
+
+    // Response DTO for personal exam schedule
+    public class MyScheduleResponse
+    {
+        public int UserId { get; set; }
+        public List<MyScheduleItemDto> Items { get; set; } = new();
+    }
+
     // DTO for individual question analysis
     public class QuestionAnalysisDto
     {
