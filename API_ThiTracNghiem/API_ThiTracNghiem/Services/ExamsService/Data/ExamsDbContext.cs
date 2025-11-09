@@ -21,6 +21,8 @@ namespace ExamsService.Data
         public DbSet<ExamAttempt> ExamAttempts { get; set; }
         public DbSet<SubmittedAnswer> SubmittedAnswers { get; set; }
         public DbSet<SubmittedAnswerOption> SubmittedAnswerOptions { get; set; }
+        public DbSet<PaymentTransaction> PaymentTransactions { get; set; }
+        public DbSet<ExamEnrollment> ExamEnrollments { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -227,6 +229,41 @@ namespace ExamsService.Data
                 entity.HasOne(sao => sao.AnswerOption)
                     .WithMany()
                     .HasForeignKey(sao => sao.AnswerOptionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure PaymentTransaction entity
+            modelBuilder.Entity<PaymentTransaction>(entity =>
+            {
+                entity.HasKey(pt => pt.TransactionId);
+                entity.Property(pt => pt.OrderId).HasMaxLength(100);
+                entity.Property(pt => pt.Currency).HasMaxLength(10);
+                entity.Property(pt => pt.Gateway).HasMaxLength(50);
+                entity.Property(pt => pt.GatewayTransactionId).HasMaxLength(100);
+                entity.Property(pt => pt.Status).HasMaxLength(50);
+                entity.Property(pt => pt.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(pt => pt.User)
+                    .WithMany()
+                    .HasForeignKey(pt => pt.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure ExamEnrollment entity
+            modelBuilder.Entity<ExamEnrollment>(entity =>
+            {
+                entity.HasKey(ee => ee.EnrollmentId);
+                entity.Property(ee => ee.Status).HasMaxLength(50);
+                entity.Property(ee => ee.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(ee => ee.Exam)
+                    .WithMany()
+                    .HasForeignKey(ee => ee.ExamId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(ee => ee.User)
+                    .WithMany()
+                    .HasForeignKey(ee => ee.UserId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
         }

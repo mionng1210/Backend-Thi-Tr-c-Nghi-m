@@ -873,6 +873,20 @@ namespace ExamsService.Controllers
                     return BadRequest(ApiResponse.ErrorResponse("Bài thi đã kết thúc", 400));
                 }
 
+                // Require successful purchase/enrollment for paid exams
+                var price = exam.Course?.Price ?? 0m;
+                var isFree = (exam.Course?.IsFree == true) || price <= 0m;
+                if (!isFree)
+                {
+                    var hasActiveEnrollment = await _context.ExamEnrollments
+                        .AnyAsync(en => en.ExamId == id && en.UserId == userId.Value && en.Status == "Active" && !en.HasDelete);
+
+                    if (!hasActiveEnrollment)
+                    {
+                        return StatusCode(403, ApiResponse.ErrorResponse("Bạn chưa thanh toán để làm bài thi này", 403));
+                    }
+                }
+
                 // Check if user already has an active attempt
                 var existingAttempt = await _context.ExamAttempts
                     .FirstOrDefaultAsync(ea => ea.ExamId == id && ea.UserId == userId.Value && 

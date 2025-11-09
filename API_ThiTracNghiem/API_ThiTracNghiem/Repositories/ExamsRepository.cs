@@ -185,6 +185,8 @@ namespace API_ThiTracNghiem.Repositories
                 Description = exam.Description,
                 CourseId = exam.CourseId,
                 CourseName = course?.Title,
+                CoursePrice = course?.Price,
+                IsCourseFree = course?.IsFree == true,
                 TeacherId = course?.TeacherId,
                 TeacherName = teacher?.FullName,
                 SubjectId = course?.SubjectId,

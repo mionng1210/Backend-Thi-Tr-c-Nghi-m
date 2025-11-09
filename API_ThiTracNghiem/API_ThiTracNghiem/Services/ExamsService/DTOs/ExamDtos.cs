@@ -36,6 +36,8 @@ namespace ExamsService.DTOs
         public string? Description { get; set; }
         public int? CourseId { get; set; }
         public string? CourseName { get; set; }
+        public decimal? CoursePrice { get; set; }
+        public bool IsCourseFree { get; set; }
         public int? TeacherId { get; set; }
         public string? TeacherName { get; set; }
         public int? SubjectId { get; set; }
