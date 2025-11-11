@@ -9,6 +9,10 @@ using ExamsService.Data;
 using System.Text;
 using API_ThiTracNghiem.Services;
 using API_ThiTracNghiem.Middleware;
+using StackExchange.Redis;
+using ExamsService.Services;
+using System.Reflection;
+using System.IO;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -44,6 +48,14 @@ builder.Services.AddSwaggerGen(c =>
             new List<string>()
         }
     });
+
+    // Include XML comments
+    var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    if (File.Exists(xmlPath))
+    {
+        c.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
+    }
 });
 
 // Add CORS
@@ -60,6 +72,17 @@ builder.Services.AddCors(options =>
 // Add Database Context
 builder.Services.AddDbContext<ExamsDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Add Redis connection & exam progress cache
+var redisConn = builder.Configuration.GetSection("Redis").GetValue<string>("ConnectionString") ?? "localhost:6379";
+// Không để ứng dụng crash nếu Redis chưa sẵn sàng: AbortOnConnectFail=false
+var redisOptions = ConfigurationOptions.Parse(redisConn);
+redisOptions.AbortOnConnectFail = false;            // tiếp tục retry kết nối nền
+redisOptions.ConnectRetry = Math.Max(redisOptions.ConnectRetry, 3);
+redisOptions.ConnectTimeout = Math.Max(redisOptions.ConnectTimeout, 5000);
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp => ConnectionMultiplexer.Connect(redisOptions));
+builder.Services.AddSingleton<IExamProgressCache, ExamProgressCache>();
+builder.Services.AddHostedService<AutoSubmitHostedService>();
 
 // Add JWT Authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

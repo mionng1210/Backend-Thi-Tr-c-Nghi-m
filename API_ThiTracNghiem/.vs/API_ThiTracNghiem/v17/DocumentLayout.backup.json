@@ -3,6 +3,10 @@
   "WorkspaceRootPath": "E:\\DACN\\Backend-Thi-Tr-c-Nghi-m\\API_ThiTracNghiem\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{D0F6FDD9-EB7E-4DAB-B6D6-42B1D7A16E49}|API_ThiTracNghiem\\Services\\ExamsService\\ExamsService.csproj|e:\\dacn\\backend-thi-tr-c-nghi-m\\api_thitracnghiem\\api_thitracnghiem\\services\\examsservice\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{D0F6FDD9-EB7E-4DAB-B6D6-42B1D7A16E49}|API_ThiTracNghiem\\Services\\ExamsService\\ExamsService.csproj|solutionrelative:api_thitracnghiem\\services\\examsservice\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{D0F6FDD9-EB7E-4DAB-B6D6-42B1D7A16E49}|API_ThiTracNghiem\\Services\\ExamsService\\ExamsService.csproj|e:\\dacn\\backend-thi-tr-c-nghi-m\\api_thitracnghiem\\api_thitracnghiem\\services\\examsservice\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{D0F6FDD9-EB7E-4DAB-B6D6-42B1D7A16E49}|API_ThiTracNghiem\\Services\\ExamsService\\ExamsService.csproj|solutionrelative:api_thitracnghiem\\services\\examsservice\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
@@ -26,7 +30,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 3,
+          "SelectedChildIndex": 2,
           "Children": [
             {
               "$type": "Bookmark",
@@ -38,7 +42,20 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 0,
+              "Title": "appsettings.json",
+              "DocumentMoniker": "E:\\DACN\\Backend-Thi-Tr-c-Nghi-m\\API_ThiTracNghiem\\API_ThiTracNghiem\\Services\\ExamsService\\appsettings.json",
+              "RelativeDocumentMoniker": "API_ThiTracNghiem\\Services\\ExamsService\\appsettings.json",
+              "ToolTip": "E:\\DACN\\Backend-Thi-Tr-c-Nghi-m\\API_ThiTracNghiem\\API_ThiTracNghiem\\Services\\ExamsService\\appsettings.json",
+              "RelativeToolTip": "API_ThiTracNghiem\\Services\\ExamsService\\appsettings.json",
+              "ViewState": "AgIAABUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2025-11-11T07:36:07.137Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
               "Title": "appsettings.json",
               "DocumentMoniker": "E:\\DACN\\Backend-Thi-Tr-c-Nghi-m\\API_ThiTracNghiem\\API_ThiTracNghiem\\Services\\ChatService\\appsettings.json",
               "RelativeDocumentMoniker": "API_ThiTracNghiem\\Services\\ChatService\\appsettings.json",
@@ -50,20 +67,20 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 1,
               "Title": "Program.cs",
               "DocumentMoniker": "E:\\DACN\\Backend-Thi-Tr-c-Nghi-m\\API_ThiTracNghiem\\API_ThiTracNghiem\\Services\\ExamsService\\Program.cs",
               "RelativeDocumentMoniker": "API_ThiTracNghiem\\Services\\ExamsService\\Program.cs",
               "ToolTip": "E:\\DACN\\Backend-Thi-Tr-c-Nghi-m\\API_ThiTracNghiem\\API_ThiTracNghiem\\Services\\ExamsService\\Program.cs",
               "RelativeToolTip": "API_ThiTracNghiem\\Services\\ExamsService\\Program.cs",
-              "ViewState": "AgIAAGUAAAAAAAAAAAAjwHUAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAEAAAAAAAAAAAAAjwFIAAABpAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-11-01T06:21:23.561Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 3,
               "Title": "SeedData.cs",
               "DocumentMoniker": "E:\\DACN\\Backend-Thi-Tr-c-Nghi-m\\API_ThiTracNghiem\\API_ThiTracNghiem\\Services\\ExamsService\\Data\\SeedData.cs",
               "RelativeDocumentMoniker": "API_ThiTracNghiem\\Services\\ExamsService\\Data\\SeedData.cs",
@@ -75,7 +92,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 4,
               "Title": "Program.cs",
               "DocumentMoniker": "E:\\DACN\\Backend-Thi-Tr-c-Nghi-m\\API_ThiTracNghiem\\API_ThiTracNghiem\\Program.cs",
               "RelativeDocumentMoniker": "API_ThiTracNghiem\\Program.cs",

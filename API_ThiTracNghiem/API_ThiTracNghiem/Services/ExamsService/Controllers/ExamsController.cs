@@ -7,6 +7,8 @@ using ExamsService.Models;
 using System.Security.Claims;
 using API_ThiTracNghiem.Services;
 using API_ThiTracNghiem.Middleware;
+using ExamsService.Services;
+using Microsoft.Extensions.Configuration;
 
 namespace ExamsService.Controllers
 {
@@ -17,12 +19,250 @@ namespace ExamsService.Controllers
         private readonly ExamsDbContext _context;
         private readonly IUserSyncService _userSyncService;
         private readonly ILogger<ExamsController> _logger;
+        private readonly IExamProgressCache _progressCache;
+        private readonly IConfiguration _config;
 
-        public ExamsController(ExamsDbContext context, IUserSyncService userSyncService, ILogger<ExamsController> logger)
+        public ExamsController(ExamsDbContext context, IUserSyncService userSyncService, ILogger<ExamsController> logger, IExamProgressCache progressCache, IConfiguration config)
         {
             _context = context;
             _userSyncService = userSyncService;
             _logger = logger;
+            _progressCache = progressCache;
+            _config = config;
+        }
+
+        private async Task<ExamAttempt?> ValidateAttemptAsync(int examId, int attemptId, int userId)
+        {
+            var attempt = await _context.ExamAttempts
+                .Include(ea => ea.Exam)
+                .FirstOrDefaultAsync(ea => ea.ExamAttemptId == attemptId && ea.ExamId == examId && ea.UserId == userId);
+            if (attempt == null) return null;
+            if (attempt.Status != "InProgress") return null;
+            return attempt;
+        }
+
+        private TimeSpan GetAttemptTtlMinutes() => TimeSpan.FromMinutes(_config.GetSection("Redis").GetValue<int>("AttemptTtlMinutes", 180));
+
+        private TimeSpan ComputeDynamicTtl(ExamAttempt attempt, int? bufferMinutes)
+        {
+            var defaultTtl = GetAttemptTtlMinutes();
+            if (attempt.EndTime.HasValue)
+            {
+                var now = DateTime.UtcNow;
+                var computed = attempt.EndTime.Value - now;
+                if (bufferMinutes.HasValue)
+                {
+                    computed += TimeSpan.FromMinutes(bufferMinutes.Value);
+                }
+                if (computed < TimeSpan.FromMinutes(1))
+                {
+                    computed = TimeSpan.FromMinutes(1);
+                }
+                return computed;
+            }
+            return defaultTtl;
+        }
+
+        /// <summary>
+        /// Lưu một câu trả lời vào Redis (Manual Save)
+        /// </summary>
+        /// <remarks>
+        /// Yêu cầu JWT. TTL được tính động theo `EndTime` của attempt cộng thêm `bufferMinutes` (nếu truyền).
+        ///
+        /// Sample request:
+        ///
+        /// {
+        ///   "examAttemptId": 123,
+        ///   "questionId": 456,
+        ///   "selectedOptionIds": [1,2],
+        ///   "textAnswer": null,
+        ///   "bufferMinutes": 5
+        /// }
+        ///
+        /// Sample response (200):
+        /// {
+        ///   "success": true,
+        ///   "data": { "message": "Đã lưu tiến trình", "attemptId": 123, "questionId": 456 }
+        /// }
+        /// </remarks>
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [HttpPost("{id}/attempts/{attemptId}/save")]
+        [Authorize]
+        public async Task<IActionResult> SaveAnswer(int id, int attemptId, [FromBody] SaveAnswerRequest request)
+        {
+            try
+            {
+                var userId = HttpContext.GetSyncedUserId();
+                if (!userId.HasValue)
+                {
+                    return Unauthorized(ApiResponse.ErrorResponse("Không thể xác thực người dùng", 401));
+                }
+
+                if (request.ExamAttemptId != attemptId)
+                {
+                    return BadRequest(ApiResponse.ErrorResponse("ExamAttemptId không khớp", 400));
+                }
+
+                var attempt = await ValidateAttemptAsync(id, attemptId, userId.Value);
+                if (attempt == null)
+                {
+                    return BadRequest(ApiResponse.ErrorResponse("Phiên thi không hợp lệ hoặc đã kết thúc", 400));
+                }
+
+                var cacheItem = new ExamsService.Services.AttemptAnswerCache
+                {
+                    QuestionId = request.QuestionId,
+                    SelectedOptionIds = request.SelectedOptionIds ?? new List<int>(),
+                    TextAnswer = request.TextAnswer,
+                    SavedAt = DateTime.UtcNow
+                };
+
+                var ttl = ComputeDynamicTtl(attempt, request.BufferMinutes);
+                await _progressCache.SaveAnswerAsync(attemptId, request.QuestionId, cacheItem, ttl);
+
+                return Ok(ApiResponse.SuccessResponse(new { message = "Đã lưu tiến trình", attemptId, questionId = request.QuestionId }));
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi lưu tiến trình", 500));
+            }
+        }
+
+        /// <summary>
+        /// Lưu batch các câu trả lời vào Redis (Manual Save)
+        /// </summary>
+        /// <remarks>
+        /// Yêu cầu JWT. TTL được tính động theo `EndTime` của attempt cộng thêm `bufferMinutes` (nếu truyền).
+        ///
+        /// Sample request:
+        /// {
+        ///   "examAttemptId": 123,
+        ///   "answers": [
+        ///     { "questionId": 456, "selectedOptionIds": [1,2], "textAnswer": null },
+        ///     { "questionId": 789, "selectedOptionIds": [], "textAnswer": "tự luận" }
+        ///   ],
+        ///   "bufferMinutes": 5
+        /// }
+        ///
+        /// Sample response (200):
+        /// {
+        ///   "success": true,
+        ///   "data": { "message": "Đã lưu batch tiến trình", "attemptId": 123, "count": 2 }
+        /// }
+        /// </remarks>
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [HttpPost("{id}/attempts/{attemptId}/save-batch")]
+        [Authorize]
+        public async Task<IActionResult> SaveAnswersBatch(int id, int attemptId, [FromBody] SaveBatchAnswersRequest request)
+        {
+            try
+            {
+                var userId = HttpContext.GetSyncedUserId();
+                if (!userId.HasValue)
+                {
+                    return Unauthorized(ApiResponse.ErrorResponse("Không thể xác thực người dùng", 401));
+                }
+
+                if (request.ExamAttemptId != attemptId)
+                {
+                    return BadRequest(ApiResponse.ErrorResponse("ExamAttemptId không khớp", 400));
+                }
+
+                var attempt = await ValidateAttemptAsync(id, attemptId, userId.Value);
+                if (attempt == null)
+                {
+                    return BadRequest(ApiResponse.ErrorResponse("Phiên thi không hợp lệ hoặc đã kết thúc", 400));
+                }
+
+                var items = (request.Answers ?? new List<SaveAnswerItem>())
+                    .Select(a => new ExamsService.Services.AttemptAnswerCache
+                    {
+                        QuestionId = a.QuestionId,
+                        SelectedOptionIds = a.SelectedOptionIds ?? new List<int>(),
+                        TextAnswer = a.TextAnswer,
+                        SavedAt = DateTime.UtcNow
+                    })
+                    .ToList();
+
+                var ttl = ComputeDynamicTtl(attempt, request.BufferMinutes);
+                await _progressCache.SaveBatchAsync(attemptId, items, ttl);
+
+                return Ok(ApiResponse.SuccessResponse(new { message = "Đã lưu batch tiến trình", attemptId, count = items.Count }));
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi lưu batch tiến trình", 500));
+            }
+        }
+
+        /// <summary>
+        /// Khôi phục tiến trình đã lưu từ Redis
+        /// </summary>
+        /// <remarks>
+        /// Yêu cầu JWT. Trả về tất cả câu trả lời đang lưu trong Redis cho attempt.
+        ///
+        /// Sample response (200):
+        /// {
+        ///   "success": true,
+        ///   "data": {
+        ///     "examAttemptId": 123,
+        ///     "count": 2,
+        ///     "answers": [
+        ///       { "questionId": 456, "selectedOptionIds": [1,2], "textAnswer": null },
+        ///       { "questionId": 789, "selectedOptionIds": [], "textAnswer": "tự luận" }
+        ///     ]
+        ///   }
+        /// }
+        /// </remarks>
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [HttpGet("{id}/attempts/{attemptId}/progress")]
+        [Authorize]
+        public async Task<IActionResult> RestoreProgress(int id, int attemptId)
+        {
+            try
+            {
+                var userId = HttpContext.GetSyncedUserId();
+                if (!userId.HasValue)
+                {
+                    return Unauthorized(ApiResponse.ErrorResponse("Không thể xác thực người dùng", 401));
+                }
+
+                var attempt = await ValidateAttemptAsync(id, attemptId, userId.Value);
+                if (attempt == null)
+                {
+                    return NotFound(ApiResponse.ErrorResponse("Không tìm thấy phiên thi hợp lệ", 404));
+                }
+
+                var cache = await _progressCache.GetAllAsync(attemptId);
+                var answers = cache.Values.Select(v => new SubmittedAnswerDto
+                {
+                    QuestionId = v.QuestionId,
+                    SelectedOptionIds = v.SelectedOptionIds ?? new List<int>(),
+                    TextAnswer = v.TextAnswer
+                }).ToList();
+
+                var response = new RestoreProgressResponse
+                {
+                    ExamAttemptId = attemptId,
+                    Count = answers.Count,
+                    Answers = answers
+                };
+
+                return Ok(ApiResponse.SuccessResponse(response));
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi khôi phục tiến trình", 500));
+            }
         }
 
         /// <summary>
@@ -1032,11 +1272,27 @@ namespace ExamsService.Controllers
                 // Calculate time spent
                 var timeSpent = (int)(DateTime.UtcNow - examAttempt.StartTime).TotalMinutes;
 
+                // Prefer answers from Redis manual save if available
+                var cached = await _progressCache.GetAllAsync(examAttempt.ExamAttemptId);
+                var answersToGrade = (cached.Count > 0)
+                    ? cached.Values.Select(v => new SubmittedAnswerDto
+                    {
+                        QuestionId = v.QuestionId,
+                        SelectedOptionIds = v.SelectedOptionIds ?? new List<int>(),
+                        TextAnswer = v.TextAnswer
+                    }).ToList()
+                    : (request.Answers ?? new List<SubmittedAnswerDto>());
+
+                if (answersToGrade.Count == 0)
+                {
+                    return BadRequest(ApiResponse.ErrorResponse("Không có dữ liệu trả lời để nộp", 400));
+                }
+
                 decimal totalScore = 0;
                 var questionResults = new List<QuestionResultDto>();
 
                 // Process each submitted answer
-                foreach (var submittedAnswer in request.Answers)
+                foreach (var submittedAnswer in answersToGrade)
                 {
                     // Get question details
                     var question = await _context.Questions
@@ -1129,6 +1385,9 @@ namespace ExamsService.Controllers
                 examAttempt.TimeSpentMinutes = timeSpent;
 
                 await _context.SaveChangesAsync();
+
+                // Cleanup cached progress
+                await _progressCache.DeleteAsync(examAttempt.ExamAttemptId);
 
                 // Calculate percentage and pass status
                 var maxScore = examAttempt.MaxScore ?? 0;
