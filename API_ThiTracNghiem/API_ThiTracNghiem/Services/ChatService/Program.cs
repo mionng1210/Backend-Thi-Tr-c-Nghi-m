@@ -145,11 +145,11 @@ app.MapControllers();
 // Map SignalR Hub
 app.MapHub<ChatHub>("/chatHub");
 
-// Ensure database is created
+// Ensure database is migrated
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
-    dbContext.Database.EnsureCreated();
+    dbContext.Database.Migrate();
 }
 
 app.Run();

@@ -125,11 +125,11 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-// Ensure database is created and seeded
+// Ensure database is migrated and seeded
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ExamsDbContext>();
-    dbContext.Database.EnsureCreated();
+    dbContext.Database.Migrate();
     
     // Seed data
     await ExamsService.Data.SeedData.SeedAsync(dbContext);
