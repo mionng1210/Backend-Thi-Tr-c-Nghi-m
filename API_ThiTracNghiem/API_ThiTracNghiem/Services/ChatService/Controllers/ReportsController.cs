@@ -70,6 +70,53 @@ namespace ChatService.Controllers
                 _context.Reports.Add(report);
                 await _context.SaveChangesAsync();
 
+                // Tạo thông báo tự động
+                try
+                {
+                    // Thông báo cho người gửi
+                    var selfNotification = new Notification
+                    {
+                        UserId = userId,
+                        Title = "Báo cáo đã gửi",
+                        Message = $"Chúng tôi đã nhận báo cáo của bạn (#{report.ReportId}).",
+                        Type = "report",
+                        IsRead = false,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    var notifications = new List<Notification> { selfNotification };
+
+                    // Thông báo cho admin (nếu có trong ChatService)
+                    var adminIds = await _context.Users
+                        .Include(u => u.Role)
+                        .Where(u => !u.HasDelete && u.Role != null && u.Role.RoleName.ToLower() == "admin")
+                        .Select(u => u.UserId)
+                        .ToListAsync();
+
+                    foreach (var adminId in adminIds)
+                    {
+                        notifications.Add(new Notification
+                        {
+                            UserId = adminId,
+                            Title = "Báo cáo mới",
+                            Message = $"Người dùng {userId} vừa gửi báo cáo #{report.ReportId}.",
+                            Type = "report",
+                            IsRead = false,
+                            CreatedAt = DateTime.UtcNow
+                        });
+                    }
+
+                    if (notifications.Count > 0)
+                    {
+                        _context.Notifications.AddRange(notifications);
+                        await _context.SaveChangesAsync();
+                    }
+                }
+                catch (Exception exNoti)
+                {
+                    _logger.LogWarning(exNoti, "Không thể tạo thông báo tự động sau khi gửi báo cáo");
+                }
+
                 var response = new ReportResponse
                 {
                     ReportId = report.ReportId,

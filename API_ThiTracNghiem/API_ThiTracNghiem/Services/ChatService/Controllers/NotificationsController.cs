@@ -106,5 +106,40 @@ namespace ChatService.Controllers
                 return StatusCode(500, new { success = false, message = "Đã xảy ra lỗi khi cập nhật cài đặt thông báo" });
             }
         }
+
+        /// <summary>
+        /// Đánh dấu 1 thông báo là đã đọc của user hiện tại
+        /// </summary>
+        [HttpPut("{id}/read")]
+        public async Task<IActionResult> MarkAsRead(int id)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
+                if (!int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(new { success = false, message = "Không thể xác thực người dùng" });
+                }
+
+                var noti = await _context.Notifications.FirstOrDefaultAsync(n => n.NotificationId == id && n.UserId == userId && !n.HasDelete);
+                if (noti == null)
+                {
+                    return NotFound(new { success = false, message = "Không tìm thấy thông báo" });
+                }
+
+                if (!noti.IsRead)
+                {
+                    noti.IsRead = true;
+                    await _context.SaveChangesAsync();
+                }
+
+                return Ok(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error marking notification as read");
+                return StatusCode(500, new { success = false, message = "Đã xảy ra lỗi khi cập nhật thông báo" });
+            }
+        }
     }
 }

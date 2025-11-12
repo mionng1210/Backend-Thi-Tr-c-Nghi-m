@@ -56,6 +56,50 @@ namespace ChatService.Controllers
                 _context.Feedbacks.Add(feedback);
                 await _context.SaveChangesAsync();
 
+                // Tạo thông báo tự động
+                try
+                {
+                    // Thông báo cho chính người gửi feedback
+                    var selfNoti = new Notification
+                    {
+                        UserId = userId,
+                        Title = "Cảm ơn bạn đã đánh giá",
+                        Message = $"Bạn vừa gửi đánh giá {feedback.Stars} sao.",
+                        Type = "feedback",
+                        IsRead = false,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    var notifications = new List<Notification> { selfNoti };
+
+                    // Thông báo cho admin (nếu có)
+                    var adminIds = await _context.Users
+                        .Include(u => u.Role)
+                        .Where(u => !u.HasDelete && u.Role != null && u.Role.RoleName.ToLower() == "admin")
+                        .Select(u => u.UserId)
+                        .ToListAsync();
+
+                    foreach (var adminId in adminIds)
+                    {
+                        notifications.Add(new Notification
+                        {
+                            UserId = adminId,
+                            Title = "Feedback mới",
+                            Message = $"User {userId} gửi feedback {feedback.Stars} sao.",
+                            Type = "feedback",
+                            IsRead = false,
+                            CreatedAt = DateTime.UtcNow
+                        });
+                    }
+
+                    _context.Notifications.AddRange(notifications);
+                    await _context.SaveChangesAsync();
+                }
+                catch (Exception exNoti)
+                {
+                    _logger.LogWarning(exNoti, "Không thể tạo thông báo sau khi gửi feedback");
+                }
+
                 return Ok(new { success = true, data = new { feedback.FeedbackId, feedback.Stars, feedback.Comment, feedback.CreatedAt } });
             }
             catch (Exception ex)

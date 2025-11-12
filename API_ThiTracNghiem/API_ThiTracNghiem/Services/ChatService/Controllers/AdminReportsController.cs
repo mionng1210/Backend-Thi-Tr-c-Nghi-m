@@ -127,6 +127,26 @@ namespace ChatService.Controllers
                 report.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
+                // Tạo thông báo cho người gửi báo cáo về trạng thái mới
+                try
+                {
+                    var statusNoti = new Notification
+                    {
+                        UserId = report.UserId,
+                        Title = "Cập nhật báo cáo",
+                        Message = $"Báo cáo #{report.ReportId} đã được cập nhật trạng thái: {report.Status}.",
+                        Type = "report_update",
+                        IsRead = false,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _context.Notifications.Add(statusNoti);
+                    await _context.SaveChangesAsync();
+                }
+                catch (Exception exNoti)
+                {
+                    _logger.LogWarning(exNoti, "Không thể tạo thông báo khi cập nhật trạng thái báo cáo");
+                }
+
                 // Lấy thông tin user từ AuthService để đảm bảo dữ liệu chính xác
                 var user = await _userSyncService.GetUserByIdAsync(report.UserId);
 
