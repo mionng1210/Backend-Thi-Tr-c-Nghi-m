@@ -18,6 +18,11 @@ namespace ExamsService.Data
         public DbSet<User> Users { get; set; }
         public DbSet<Role> Roles { get; set; }
         public DbSet<Subject> Subjects { get; set; }
+        public DbSet<ExamAttempt> ExamAttempts { get; set; }
+        public DbSet<SubmittedAnswer> SubmittedAnswers { get; set; }
+        public DbSet<SubmittedAnswerOption> SubmittedAnswerOptions { get; set; }
+        public DbSet<PaymentTransaction> PaymentTransactions { get; set; }
+        public DbSet<ExamEnrollment> ExamEnrollments { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -109,7 +114,7 @@ namespace ExamsService.Data
                 entity.Property(ao => ao.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
                 
                 entity.HasOne(ao => ao.Question)
-                    .WithMany()
+                    .WithMany(q => q.AnswerOptions)
                     .HasForeignKey(ao => ao.QuestionId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
@@ -171,6 +176,95 @@ namespace ExamsService.Data
                 entity.Property(s => s.Name).IsRequired().HasMaxLength(200);
                 entity.Property(s => s.Description).HasMaxLength(1000);
                 entity.Property(s => s.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            });
+
+            // Configure ExamAttempt entity
+            modelBuilder.Entity<ExamAttempt>(entity =>
+            {
+                entity.HasKey(ea => ea.ExamAttemptId);
+                entity.Property(ea => ea.VariantCode).HasMaxLength(50);
+                entity.Property(ea => ea.Status).IsRequired().HasMaxLength(50);
+                entity.Property(ea => ea.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                
+                entity.HasOne(ea => ea.Exam)
+                    .WithMany()
+                    .HasForeignKey(ea => ea.ExamId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                    
+                entity.HasOne(ea => ea.User)
+                    .WithMany()
+                    .HasForeignKey(ea => ea.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure SubmittedAnswer entity
+            modelBuilder.Entity<SubmittedAnswer>(entity =>
+            {
+                entity.HasKey(sa => sa.SubmittedAnswerId);
+                entity.Property(sa => sa.TextAnswer).HasMaxLength(4000);
+                entity.Property(sa => sa.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                
+                entity.HasOne(sa => sa.ExamAttempt)
+                    .WithMany()
+                    .HasForeignKey(sa => sa.ExamAttemptId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                    
+                entity.HasOne(sa => sa.Question)
+                    .WithMany()
+                    .HasForeignKey(sa => sa.QuestionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure SubmittedAnswerOption entity
+            modelBuilder.Entity<SubmittedAnswerOption>(entity =>
+            {
+                entity.HasKey(sao => sao.SubmittedAnswerOptionId);
+                entity.Property(sao => sao.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                
+                entity.HasOne(sao => sao.SubmittedAnswer)
+                    .WithMany()
+                    .HasForeignKey(sao => sao.SubmittedAnswerId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                    
+                entity.HasOne(sao => sao.AnswerOption)
+                    .WithMany()
+                    .HasForeignKey(sao => sao.AnswerOptionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure PaymentTransaction entity
+            modelBuilder.Entity<PaymentTransaction>(entity =>
+            {
+                entity.HasKey(pt => pt.TransactionId);
+                entity.Property(pt => pt.OrderId).HasMaxLength(100);
+                entity.Property(pt => pt.Currency).HasMaxLength(10);
+                entity.Property(pt => pt.Gateway).HasMaxLength(50);
+                entity.Property(pt => pt.GatewayTransactionId).HasMaxLength(100);
+                entity.Property(pt => pt.Status).HasMaxLength(50);
+                entity.Property(pt => pt.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(pt => pt.User)
+                    .WithMany()
+                    .HasForeignKey(pt => pt.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure ExamEnrollment entity
+            modelBuilder.Entity<ExamEnrollment>(entity =>
+            {
+                entity.HasKey(ee => ee.EnrollmentId);
+                entity.Property(ee => ee.Status).HasMaxLength(50);
+                entity.Property(ee => ee.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(ee => ee.Exam)
+                    .WithMany()
+                    .HasForeignKey(ee => ee.ExamId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(ee => ee.User)
+                    .WithMany()
+                    .HasForeignKey(ee => ee.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
         }
     }

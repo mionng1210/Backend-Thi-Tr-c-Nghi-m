@@ -9,6 +9,10 @@ Các endpoint admin được thêm vào AuthService để quản lý người d�
 3. `PUT /api/admin/users/{id}/lock` - Khóa user
 4. `PUT /api/admin/users/{id}/unlock` - Mở khóa user
 5. `DELETE /api/admin/users/{id}` - Xóa user (soft delete)
+6. `GET /api/admin/permissions/requests` - Lấy danh sách yêu cầu phân quyền
+7. `PUT /api/admin/permissions/approve/{id}` - Duyệt yêu cầu và cập nhật role = Teacher
+8. `PUT /api/admin/permissions/reject/{id}` - Từ chối yêu cầu, ghi lý do và gửi email
+9. `PUT /api/admin/users/{userId}/role` - Đổi vai trò theo tên (vd: "student")
 
 ## Authentication
 Tất cả các endpoint admin yêu cầu:
@@ -26,6 +30,7 @@ Tất cả các endpoint admin yêu cầu:
 - `search` (string, optional): Tìm kiếm theo email, tên hoặc số điện thoại
 - `status` (string, optional): Lọc theo trạng thái (active, inactive, banned)
 - `roleId` (int, optional): Lọc theo role ID
+- `role` (string, optional): Lọc theo tên vai trò (không phân biệt hoa thường), ví dụ `teacher`, `student`, `admin`
 
 **Response**:
 ```json
@@ -69,8 +74,11 @@ GET /api/admin/users?status=active
 # Lọc user theo role ID
 GET /api/admin/users?roleId=2
 
+# Lọc user theo tên vai trò
+GET /api/admin/users?role=teacher
+
 # Kết hợp nhiều filter
-GET /api/admin/users?page=1&pageSize=10&status=active&roleId=2&search=nguyen
+GET /api/admin/users?page=1&pageSize=10&status=active&role=teacher&search=nguyen
 ```
 
 ### 2. PUT /api/admin/users/{id}
@@ -343,3 +351,130 @@ Authorization: Bearer <admin_token>
 3. Test các trường hợp success và error
 4. Kiểm tra pagination và filtering
 5. Verify data validation rules
+### 6. GET /api/admin/permissions/requests
+**Mô tả**: Lấy danh sách yêu cầu phân quyền (mặc định lọc theo `pending`).
+
+**Query Parameters**:
+- `status` (string, optional): Lọc theo trạng thái `pending|approved|rejected`. Mặc định: `pending`.
+
+**Response**:
+```json
+{
+  "requests": [
+    {
+      "id": 1,
+      "userId": 123,
+      "email": "user@example.com",
+      "fullName": "Nguyễn Văn A",
+      "requestedRoleId": 2,
+      "status": "pending",
+      "submittedAt": "2025-10-20T08:00:00Z",
+      "reviewedAt": null,
+      "reviewedById": null,
+      "rejectReason": null
+    }
+  ],
+  "count": 1
+}
+```
+
+### 7. PUT /api/admin/permissions/approve/{id}
+**Mô tả**: Duyệt yêu cầu phân quyền và cập nhật role của user thành Teacher.
+
+**Path Parameters**:
+- `id` (int): ID của yêu cầu.
+
+**Response**:
+```json
+{
+  "message": "Đã duyệt yêu cầu và cập nhật role = Teacher",
+  "userId": 123
+}
+```
+
+### 8. PUT /api/admin/permissions/reject/{id}
+**Mô tả**: Từ chối yêu cầu phân quyền, ghi lý do và gửi email thông báo tới user.
+
+**Path Parameters**:
+- `id` (int): ID của yêu cầu.
+
+**Body**:
+```json
+{
+  "reason": "Hồ sơ chưa đủ thông tin chứng minh kinh nghiệm giảng dạy"
+}
+```
+
+**Response**:
+```json
+{
+  "message": "Đã từ chối yêu cầu và gửi email thông báo",
+  "requestId": 1
+}
+```
+
+### 9. PUT /api/admin/users/{userId}/role
+**Mô tả**: Admin chủ động đổi/thu hồi quyền bằng cách đặt vai trò theo tên (không phân biệt hoa thường).
+
+**Path Parameters**:
+- `userId` (int): ID người dùng cần đổi vai trò
+
+**Request Body**:
+```json
+{
+  "role": "student"
+}
+```
+
+**Response Success**: Trả về thông tin user sau cập nhật
+```json
+{
+  "userId": 123,
+  "email": "user@example.com",
+  "fullName": "Nguyễn Văn A",
+  "roleId": 1,
+  "roleName": "Student",
+  "status": "active",
+  "createdAt": "2025-01-01T00:00:00Z",
+  "updatedAt": "2025-11-06T04:30:00Z"
+}
+```
+
+**Response Error Examples**:
+```json
+// User không tồn tại
+{
+  "message": "Không tìm thấy người dùng"
+}
+
+// Role không tồn tại
+{
+  "message": "Role không tồn tại"
+}
+
+// Không cho phép đổi vai trò của admin sang non-admin
+{
+  "message": "Không thể thay đổi vai trò của admin"
+}
+```
+
+**Ví dụ sử dụng**:
+```bash
+# Thu hồi quyền giáo viên về student
+PUT /api/admin/users/123/role
+Content-Type: application/json
+Authorization: Bearer <admin_token>
+
+{
+  "role": "student"
+}
+
+# Cấp quyền teacher
+PUT /api/admin/users/123/role
+Content-Type: application/json
+Authorization: Bearer <admin_token>
+
+{
+  "role": "teacher"
+}
+```

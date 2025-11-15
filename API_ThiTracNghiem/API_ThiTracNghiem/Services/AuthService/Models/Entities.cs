@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace AuthService.Models;
+namespace API_ThiTracNghiem.Services.AuthService.Models;
 
 public class User
 {
@@ -80,6 +80,52 @@ public class AuthSession
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
     public User? User { get; set; }
+}
+
+public class PermissionRequest
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public int PermissionRequestId { get; set; }
+
+    public int UserId { get; set; }
+    public User? User { get; set; }
+
+    // Vai trò được yêu cầu (ví dụ: Teacher)
+    public int RequestedRoleId { get; set; }
+
+    // Trạng thái: pending | approved | rejected
+    [MaxLength(30)]
+    public string Status { get; set; } = "pending";
+
+    // Lý do từ chối (nếu rejected)
+    [MaxLength(1000)]
+    public string? RejectReason { get; set; }
+
+    public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? ReviewedAt { get; set; }
+    public int? ReviewedById { get; set; }
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? UpdatedAt { get; set; }
+
+    // Thông tin ngân hàng (bắt buộc đối với yêu cầu lên Teacher)
+    [MaxLength(200)]
+    public string? BankName { get; set; }
+    [MaxLength(150)]
+    public string? BankAccountName { get; set; }
+    [MaxLength(50)]
+    public string? BankAccountNumber { get; set; }
+
+    // Thông tin thanh toán (tùy chọn)
+    [MaxLength(50)]
+    public string? PaymentMethod { get; set; }
+    [MaxLength(100)]
+    public string? PaymentReference { get; set; }
+    [MaxLength(30)]
+    public string? PaymentStatus { get; set; }
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal? PaymentAmount { get; set; }
 }
 
 

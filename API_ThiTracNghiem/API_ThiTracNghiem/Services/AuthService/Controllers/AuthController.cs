@@ -1,16 +1,17 @@
 using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using AuthService.Data;
-using AuthService.Models;
-using AuthService.Services;
-using AuthService.Utils;
+using API_ThiTracNghiem.Services.AuthService.Data;
+using API_ThiTracNghiem.Services.AuthService.Models;
+using API_ThiTracNghiem.Services.AuthService.Services;
+using API_ThiTracNghiem.Services.AuthService.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using API_ThiTracNghiem.Shared.Contracts;
 using Shared.Contracts.Auth;
 
-namespace AuthService.Controllers;
+namespace API_ThiTracNghiem.Services.AuthService.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -173,39 +174,22 @@ public class AuthController : ControllerBase
         _db.AuthSessions.Add(session);
         await _db.SaveChangesAsync();
 
-        // Return full user info with token
-        var userResponse = new
-        {
-            user = new
-            {
-                userId = user.UserId,
-                email = user.Email,
-                phoneNumber = user.PhoneNumber,
-                fullName = user.FullName,
-                role = roleName?.ToLower() ?? "student",
-                gender = user.Gender,
-                dateOfBirth = user.DateOfBirth,
-                avatar = user.AvatarUrl,
-                isVerified = user.IsEmailVerified,
-                status = user.Status,
-                createdAt = user.CreatedAt
-            },
-            token = new
-            {
-                accessToken = token,
-                expiresAt = expiresAt
-            }
-        };
-
-        return Ok(userResponse);
+        return Ok(new { token, expiresAt });
     }
 
     [AllowAnonymous]
     [HttpPost("logout")]
-    public async Task<IActionResult> Logout()
+    public async Task<IActionResult> Logout([FromQuery] bool logoutAll = false)
     {
         var auth = Request.Headers["Authorization"].ToString();
-        if (string.IsNullOrWhiteSpace(auth)) return Unauthorized();
+        if (string.IsNullOrWhiteSpace(auth)) 
+        {
+            return BadRequest(new { 
+                message = "Token không được cung cấp",
+                success = false,
+                timestamp = DateTime.UtcNow
+            });
+        }
 
         var token = auth.Trim();
         const string prefix = "Bearer ";
@@ -230,28 +214,110 @@ public class AuthController : ControllerBase
         try
         {
             var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
-            var principal = handler.ValidateToken(token, parameters, out var _);
+            var principal = handler.ValidateToken(token, parameters, out var validatedToken);
             var sub = principal.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub)?.Value
                       ?? principal.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
-            if (!int.TryParse(sub, out var userId)) return Unauthorized();
-
-            var session = await _db.AuthSessions
-                .Where(s => s.UserId == userId && s.IsActive)
-                .OrderByDescending(s => s.LoginAt)
-                .FirstOrDefaultAsync();
-
-            if (session != null)
+            
+            if (!int.TryParse(sub, out var userId)) 
             {
-                session.IsActive = false;
-                session.UpdatedAt = DateTime.UtcNow;
-                await _db.SaveChangesAsync();
+                return Unauthorized(new { 
+                    message = "Token không hợp lệ",
+                    success = false,
+                    timestamp = DateTime.UtcNow
+                });
             }
 
-            return Ok(new { message = "logged out" });
+            // Lấy thông tin user để logging
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+            if (user == null)
+            {
+                return NotFound(new { 
+                    message = "Không tìm thấy người dùng",
+                    success = false,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+
+            var logoutTime = DateTime.UtcNow;
+            var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+            var userAgent = Request.Headers["User-Agent"].ToString();
+            
+            int sessionsLoggedOut = 0;
+
+            if (logoutAll)
+            {
+                // Logout tất cả sessions của user
+                var allActiveSessions = await _db.AuthSessions
+                    .Where(s => s.UserId == userId && s.IsActive)
+                    .ToListAsync();
+
+                foreach (var session in allActiveSessions)
+                {
+                    session.IsActive = false;
+                    session.UpdatedAt = logoutTime;
+                }
+                
+                sessionsLoggedOut = allActiveSessions.Count;
+                
+                // Log activity
+                Console.WriteLine($"[LOGOUT ALL] User {user.Email} (ID: {userId}) logged out from {sessionsLoggedOut} sessions at {logoutTime:yyyy-MM-dd HH:mm:ss} UTC from IP: {clientIp}");
+            }
+            else
+            {
+                // Logout chỉ session hiện tại
+                var currentSession = await _db.AuthSessions
+                    .Where(s => s.UserId == userId && s.IsActive)
+                    .OrderByDescending(s => s.LoginAt)
+                    .FirstOrDefaultAsync();
+
+                if (currentSession != null)
+                {
+                    currentSession.IsActive = false;
+                    currentSession.UpdatedAt = logoutTime;
+                    sessionsLoggedOut = 1;
+                }
+                
+                // Log activity
+                Console.WriteLine($"[LOGOUT] User {user.Email} (ID: {userId}) logged out at {logoutTime:yyyy-MM-dd HH:mm:ss} UTC from IP: {clientIp}");
+            }
+
+            await _db.SaveChangesAsync();
+
+            // Lấy số sessions còn lại
+            var remainingSessions = await _db.AuthSessions
+                .CountAsync(s => s.UserId == userId && s.IsActive);
+
+            return Ok(new { 
+                message = logoutAll ? 
+                    $"Đã đăng xuất thành công khỏi tất cả {sessionsLoggedOut} phiên đăng nhập" : 
+                    "Đăng xuất thành công",
+                success = true,
+                data = new {
+                    userId = userId,
+                    userEmail = user.Email,
+                    logoutTime = logoutTime,
+                    sessionsLoggedOut = sessionsLoggedOut,
+                    remainingActiveSessions = remainingSessions,
+                    logoutType = logoutAll ? "all_sessions" : "current_session",
+                    clientInfo = new {
+                        ipAddress = clientIp,
+                        userAgent = !string.IsNullOrEmpty(userAgent) ? userAgent : "Unknown"
+                    }
+                },
+                timestamp = logoutTime
+            });
         }
-        catch
+        catch (Exception ex)
         {
-            return Unauthorized();
+            // Log error
+            Console.WriteLine($"[LOGOUT ERROR] Failed to logout: {ex.Message}");
+            
+            return Unauthorized(new { 
+                message = "Token không hợp lệ hoặc đã hết hạn",
+                success = false,
+                error = "INVALID_TOKEN",
+                timestamp = DateTime.UtcNow
+            });
         }
     }
 

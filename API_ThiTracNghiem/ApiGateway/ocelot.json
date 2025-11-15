@@ -11,34 +11,55 @@
       "DownstreamPathTemplate": "/api/Auth/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5001 }],
+      "UpstreamPathTemplate": "/api/v1/auth/{everything}",
+      "UpstreamHttpMethod": ["Get", "Post", "Put", "Delete", "Options"]
+    },
+    {
+      "DownstreamPathTemplate": "/api/Auth/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5001 }],
       "UpstreamPathTemplate": "/api/Auth/{everything}",
-      "UpstreamHttpMethod": ["Post", "Put", "Delete"]
+      "UpstreamHttpMethod": ["Get", "Post", "Put", "Delete", "Options"]
     },
     {
       "DownstreamPathTemplate": "/api/Users",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5001 }],
-      "UpstreamPathTemplate": "/api/Users",
+      "UpstreamPathTemplate": "/api/v1/users",
       "UpstreamHttpMethod": ["Get"]
     },
     {
       "DownstreamPathTemplate": "/api/Users/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5001 }],
+      "UpstreamPathTemplate": "/api/v1/users/{everything}",
+      "UpstreamHttpMethod": ["Get", "Post", "Put", "Delete"]
+    },
+    {
+      "DownstreamPathTemplate": "/api/Users",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5004 }],
+      "UpstreamPathTemplate": "/api/Users",
+      "UpstreamHttpMethod": ["Get"]
+    },
+    {
+      "DownstreamPathTemplate": "/api/Users/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5004 }],
       "UpstreamPathTemplate": "/api/Users/{everything}",
       "UpstreamHttpMethod": ["Get", "Post", "Put", "Delete"]
     },
     {
       "DownstreamPathTemplate": "/api/Admin",
       "DownstreamScheme": "http",
-      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5001 }],
+      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5004 }],
       "UpstreamPathTemplate": "/api/Admin",
       "UpstreamHttpMethod": ["Get"]
     },
     {
       "DownstreamPathTemplate": "/api/Admin/{everything}",
       "DownstreamScheme": "http",
-      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5001 }],
+      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5004 }],
       "UpstreamPathTemplate": "/api/Admin/{everything}",
       "UpstreamHttpMethod": ["Post", "Put", "Delete"]
     },
@@ -47,15 +68,29 @@
       "DownstreamPathTemplate": "/api/Exams",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5002 }],
+      "UpstreamPathTemplate": "/api/v1/exams",
+      "UpstreamHttpMethod": ["Get", "Options"]
+    },
+    {
+      "DownstreamPathTemplate": "/api/Exams/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5002 }],
+      "UpstreamPathTemplate": "/api/v1/exams/{everything}",
+      "UpstreamHttpMethod": ["Get", "Post", "Put", "Delete", "Options"]
+    },
+    {
+      "DownstreamPathTemplate": "/api/Exams",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5002 }],
       "UpstreamPathTemplate": "/api/Exams",
-      "UpstreamHttpMethod": ["Get"]
+      "UpstreamHttpMethod": ["Get", "Post", "Options"]
     },
     {
       "DownstreamPathTemplate": "/api/Exams/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5002 }],
       "UpstreamPathTemplate": "/api/Exams/{everything}",
-      "UpstreamHttpMethod": ["Get", "Post", "Put", "Delete"]
+      "UpstreamHttpMethod": ["Get", "Post", "Put", "Delete", "Options"]
     },
     {
       "DownstreamPathTemplate": "/api/question-bank",
@@ -71,24 +106,84 @@
       "UpstreamPathTemplate": "/api/question-bank/{everything}",
       "UpstreamHttpMethod": ["Get", "Post", "Put", "Delete"]
     },
+    {
+      "DownstreamPathTemplate": "/api/question-bank",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5002 }],
+      "UpstreamPathTemplate": "/api/v1/question-bank",
+      "UpstreamHttpMethod": ["Get"]
+    },
+    {
+      "DownstreamPathTemplate": "/api/question-bank/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5002 }],
+      "UpstreamPathTemplate": "/api/v1/question-bank/{everything}",
+      "UpstreamHttpMethod": ["Get", "Post", "Put", "Delete"]
+    },
 
     {
       "DownstreamPathTemplate": "/api/Materials",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5003 }],
       "UpstreamPathTemplate": "/api/Materials",
-      "UpstreamHttpMethod": ["Get"]
+      "UpstreamHttpMethod": ["Get", "Options"]
     },
     {
       "DownstreamPathTemplate": "/api/Materials/{everything}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5003 }],
       "UpstreamPathTemplate": "/api/Materials/{everything}",
-      "UpstreamHttpMethod": ["Get", "Post", "Put", "Delete"]
+      "UpstreamHttpMethod": ["Get", "Post", "Put", "Delete", "Options"]
+    },
+    {
+      "DownstreamPathTemplate": "/api/Materials",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5003 }],
+      "UpstreamPathTemplate": "/api/v1/materials",
+      "UpstreamHttpMethod": ["Get", "Options"]
+    },
+    {
+      "DownstreamPathTemplate": "/api/Materials/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5003 }],
+      "UpstreamPathTemplate": "/api/v1/materials/{everything}",
+      "UpstreamHttpMethod": ["Get", "Post", "Put", "Delete", "Options"]
+    }
+    ,
+    {
+      "DownstreamPathTemplate": "/api/Materials/by-course/{courseId}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5003 }],
+      "UpstreamPathTemplate": "/api/courses/{courseId}/materials",
+      "UpstreamHttpMethod": ["Get"]
+    }
+    ,
+    {
+      "DownstreamPathTemplate": "/api/Materials/by-course/{courseId}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5003 }],
+      "UpstreamPathTemplate": "/api/v1/courses/{courseId}/materials",
+      "UpstreamHttpMethod": ["Get"]
+    }
+    ,
+    {
+      "DownstreamPathTemplate": "/api/Materials/by-course/{lessonId}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5003 }],
+      "UpstreamPathTemplate": "/api/lessons/{lessonId}/materials",
+      "UpstreamHttpMethod": ["Get"]
+    }
+    ,
+    {
+      "DownstreamPathTemplate": "/api/Materials/by-course/{lessonId}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "localhost", "Port": 5003 }],
+      "UpstreamPathTemplate": "/api/v1/lessons/{lessonId}/materials",
+      "UpstreamHttpMethod": ["Get"]
     }
   ],
   "GlobalConfiguration": {
-    "BaseUrl": "http://localhost:8000",
+    "BaseUrl": "http://localhost:5001",
     "RequestIdKey": "Oc-RequestId"
   }
 }

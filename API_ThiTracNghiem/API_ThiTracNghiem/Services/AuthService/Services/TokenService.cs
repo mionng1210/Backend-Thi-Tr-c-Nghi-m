@@ -4,9 +4,9 @@ using System.Text;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
-using AuthService.Models;
+using API_ThiTracNghiem.Services.AuthService.Models;
 
-namespace AuthService.Services;
+namespace API_ThiTracNghiem.Services.AuthService.Services;
 
 public interface ITokenService
 {

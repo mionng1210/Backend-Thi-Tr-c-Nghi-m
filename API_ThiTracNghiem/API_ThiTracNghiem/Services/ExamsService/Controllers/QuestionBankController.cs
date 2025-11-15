@@ -21,7 +21,34 @@ namespace ExamsService.Controllers
         /// <summary>
         /// Thêm câu hỏi mới vào ngân hàng câu hỏi trung tâm
         /// </summary>
-        [HttpPost]
+        [HttpPost("debug/create-subject")]
+    public async Task<IActionResult> CreateDebugSubject()
+    {
+        var subject = new Subject
+        {
+            Name = "Test Subject",
+            Description = "Subject for testing",
+            CreatedAt = DateTime.UtcNow
+        };
+        
+        _context.Subjects.Add(subject);
+        await _context.SaveChangesAsync();
+        
+        return Ok(new { message = "Subject created", subjectId = subject.SubjectId, name = subject.Name });
+    }
+
+    [HttpGet("debug/subjects")]
+    public async Task<IActionResult> GetDebugSubjects()
+    {
+        var subjects = await _context.Subjects.ToListAsync();
+        return Ok(new { 
+            message = "Debug subjects", 
+            count = subjects.Count,
+            subjects = subjects.Select(s => new { s.SubjectId, s.Name, s.Description }).ToList()
+        });
+    }
+
+    [HttpPost]
         [Authorize(Roles = "Teacher,Admin")]
         public async Task<IActionResult> CreateQuestion([FromBody] CreateQuestionBankRequest request)
         {
@@ -42,18 +69,34 @@ namespace ExamsService.Controllers
                 return BadRequest(new { message = "Câu hỏi phải có ít nhất một đáp án đúng" });
             }
 
+            // Validate subject exists
+            var subject = await _context.Subjects.FirstOrDefaultAsync(s => s.SubjectId == request.SubjectId);
+            if (subject == null)
+            {
+                // Debug: Log available subjects
+                var allSubjects = await _context.Subjects.ToListAsync();
+                Console.WriteLine($"DEBUG: Available subjects: {string.Join(", ", allSubjects.Select(s => $"ID:{s.SubjectId} Name:{s.Name}"))}");
+                Console.WriteLine($"DEBUG: Requested SubjectId: {request.SubjectId}");
+                return BadRequest(new { message = "Môn học không tồn tại" });
+            }
+
+            Console.WriteLine($"DEBUG: Found subject - ID: {subject.SubjectId}, Name: {subject.Name}");
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // Get or create default question bank
-                var questionBank = await _context.QuestionBanks.FirstOrDefaultAsync(qb => !qb.HasDelete);
+                // Get or create question bank for the subject
+                var questionBank = await _context.QuestionBanks
+                    .FirstOrDefaultAsync(qb => qb.SubjectId == request.SubjectId && !qb.HasDelete);
+                
                 if (questionBank == null)
                 {
-                    // Create default question bank if none exists
+                    // Create question bank for this subject if none exists
                     questionBank = new QuestionBank
                     {
-                        Name = "Ngân hàng câu hỏi mặc định",
-                        Description = "Ngân hàng câu hỏi chung cho hệ thống",
+                        Name = $"Ngân hàng câu hỏi {subject.Name}",
+                        Description = $"Ngân hàng câu hỏi cho môn {subject.Name}",
+                        SubjectId = request.SubjectId,
                         CreatedBy = 1, // Default user
                         CreatedAt = DateTime.UtcNow,
                         HasDelete = false
@@ -109,6 +152,8 @@ namespace ExamsService.Controllers
                     Difficulty = question.Difficulty,
                     Marks = question.Marks,
                     Tags = question.TagsJson,
+                    SubjectId = questionBank.SubjectId,
+                    SubjectName = subject.Name,
                     CreatedAt = question.CreatedAt,
                     AnswerOptions = answerOptions.Select(ao => new AnswerOptionResponse
                     {
@@ -137,13 +182,58 @@ namespace ExamsService.Controllers
         {
             try
             {
-                // Simple query to test
-                var questions = await _context.Questions
-                    .Where(q => !q.HasDelete)
-                    .Take(10)
+                var query = _context.Questions
+                    .Include(q => q.Bank)
+                    .ThenInclude(b => b.Subject)
+                    .Where(q => !q.HasDelete);
+
+                // Filter by subject if provided
+                if (filter.SubjectId.HasValue)
+                {
+                    query = query.Where(q => q.Bank != null && q.Bank.SubjectId == filter.SubjectId.Value);
+                }
+
+                // Filter by question type if provided
+                if (!string.IsNullOrEmpty(filter.QuestionType))
+                {
+                    query = query.Where(q => q.QuestionType == filter.QuestionType);
+                }
+
+                // Filter by difficulty if provided
+                if (!string.IsNullOrEmpty(filter.Difficulty))
+                {
+                    query = query.Where(q => q.Difficulty == filter.Difficulty);
+                }
+
+                // Search in content if provided
+                if (!string.IsNullOrEmpty(filter.SearchContent))
+                {
+                    query = query.Where(q => q.Content.Contains(filter.SearchContent));
+                }
+
+                // Filter by tags if provided
+                if (!string.IsNullOrEmpty(filter.Tags))
+                {
+                    query = query.Where(q => q.TagsJson != null && q.TagsJson.Contains(filter.Tags));
+                }
+
+                // Get total count for pagination
+                var totalCount = await query.CountAsync();
+
+                // Apply pagination
+                var questions = await query
+                    .OrderByDescending(q => q.CreatedAt)
+                    .Skip((filter.Page - 1) * filter.PageSize)
+                    .Take(filter.PageSize)
                     .ToListAsync();
 
-                // Simple response for testing
+                // Get answer options for each question
+                var questionIds = questions.Select(q => q.QuestionId).ToList();
+                var answerOptions = await _context.AnswerOptions
+                    .Where(ao => questionIds.Contains(ao.QuestionId) && !ao.HasDelete)
+                    .ToListAsync();
+
+                // Build response
                 var questionResponses = questions.Select(q => new QuestionBankResponse
                 {
                     QuestionId = q.QuestionId,
@@ -152,11 +242,30 @@ namespace ExamsService.Controllers
                     Difficulty = q.Difficulty,
                     Marks = q.Marks,
                     Tags = q.TagsJson,
+                    SubjectId = q.Bank?.SubjectId,
+                    SubjectName = q.Bank?.Subject?.Name,
                     CreatedAt = q.CreatedAt,
-                    AnswerOptions = new List<AnswerOptionResponse>()
+                    AnswerOptions = answerOptions
+                        .Where(ao => ao.QuestionId == q.QuestionId)
+                        .Select(ao => new AnswerOptionResponse
+                        {
+                            OptionId = ao.OptionId,
+                            Content = ao.Content,
+                            IsCorrect = ao.IsCorrect,
+                            OrderIndex = ao.OrderIndex
+                        }).ToList()
                 }).ToList();
 
-                return Ok(new { message = "Lấy danh sách câu hỏi thành công", data = questionResponses });
+                var response = new QuestionBankListResponse
+                {
+                    Questions = questionResponses,
+                    TotalCount = totalCount,
+                    Page = filter.Page,
+                    PageSize = filter.PageSize,
+                    TotalPages = (int)Math.Ceiling((double)totalCount / filter.PageSize)
+                };
+
+                return Ok(new { message = "Lấy danh sách câu hỏi thành công", data = response });
             }
             catch (Exception ex)
             {

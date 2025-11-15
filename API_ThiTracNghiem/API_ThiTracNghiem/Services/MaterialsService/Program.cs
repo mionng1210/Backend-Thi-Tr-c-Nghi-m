@@ -10,6 +10,8 @@ using MaterialsService.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http.Features;
 using MaterialsService.Integrations;
+using API_ThiTracNghiem.Services;
+using API_ThiTracNghiem.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -85,6 +87,10 @@ builder.Services.AddHttpClient();
 builder.Services.AddScoped<ICloudStorage, CloudinaryService>();
 builder.Services.AddScoped<IDocumentStorage, SupabaseStorage>();
 
+// User Sync Service
+builder.Services.AddHttpClient<IUserSyncService, UserSyncService>();
+builder.Services.AddScoped<IUserSyncService, UserSyncService>();
+
 // Increase multipart/form-data limit (to 500 MB)
 builder.Services.Configure<FormOptions>(options =>
 {
@@ -105,6 +111,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseRouting();
 app.UseAuthentication();
+
+// User Sync Middleware - Đặt sau Authentication
+app.UseUserSync();
+
 app.UseAuthorization();
 
 app.MapControllers();

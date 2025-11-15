@@ -1,12 +1,93 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "C:\\Users\\tsmdo\\Desktop\\FE_DACN\\API_ThiTracNghiem\\",
-  "Documents": [],
+  "WorkspaceRootPath": "E:\\DACN\\FE_DACN\\API_ThiTracNghiem\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{15777A8E-E8D8-4A5D-BB07-95CD34063147}|API_ThiTracNghiem\\Services\\ChatService\\ChatService.csproj|e:\\dacn\\fe_dacn\\api_thitracnghiem\\api_thitracnghiem\\services\\chatservice\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{15777A8E-E8D8-4A5D-BB07-95CD34063147}|API_ThiTracNghiem\\Services\\ChatService\\ChatService.csproj|solutionrelative:api_thitracnghiem\\services\\chatservice\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D0F6FDD9-EB7E-4DAB-B6D6-42B1D7A16E49}|API_ThiTracNghiem\\Services\\ExamsService\\ExamsService.csproj|e:\\dacn\\fe_dacn\\api_thitracnghiem\\api_thitracnghiem\\services\\examsservice\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{D0F6FDD9-EB7E-4DAB-B6D6-42B1D7A16E49}|API_ThiTracNghiem\\Services\\ExamsService\\ExamsService.csproj|solutionrelative:api_thitracnghiem\\services\\examsservice\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{B7E8E4F1-88E5-4B87-9C19-08D5C2D78A11}|API_ThiTracNghiem\\Services\\AuthService\\AuthService.csproj|e:\\dacn\\fe_dacn\\api_thitracnghiem\\api_thitracnghiem\\services\\authservice\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{B7E8E4F1-88E5-4B87-9C19-08D5C2D78A11}|API_ThiTracNghiem\\Services\\AuthService\\AuthService.csproj|solutionrelative:api_thitracnghiem\\services\\authservice\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{6B08AEFC-D112-47F7-BE3C-49BFA5831DFF}|API_ThiTracNghiem\\API_ThiTracNghiem.csproj|e:\\dacn\\fe_dacn\\api_thitracnghiem\\api_thitracnghiem\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{6B08AEFC-D112-47F7-BE3C-49BFA5831DFF}|API_ThiTracNghiem\\API_ThiTracNghiem.csproj|solutionrelative:api_thitracnghiem\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
       "VerticalTabListWidth": 256,
-      "DocumentGroups": []
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 4,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{b1e99781-ab81-11d0-b683-00aa00a3ee26}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{d78612c7-9962-4b83-95d9-268046dad23a}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "appsettings.json",
+              "DocumentMoniker": "E:\\DACN\\FE_DACN\\API_ThiTracNghiem\\API_ThiTracNghiem\\Services\\ExamsService\\appsettings.json",
+              "RelativeDocumentMoniker": "API_ThiTracNghiem\\Services\\ExamsService\\appsettings.json",
+              "ToolTip": "E:\\DACN\\FE_DACN\\API_ThiTracNghiem\\API_ThiTracNghiem\\Services\\ExamsService\\appsettings.json",
+              "RelativeToolTip": "API_ThiTracNghiem\\Services\\ExamsService\\appsettings.json",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAkAAACRAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2025-11-15T08:59:06.712Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "appsettings.json",
+              "DocumentMoniker": "E:\\DACN\\FE_DACN\\API_ThiTracNghiem\\API_ThiTracNghiem\\Services\\AuthService\\appsettings.json",
+              "RelativeDocumentMoniker": "API_ThiTracNghiem\\Services\\AuthService\\appsettings.json",
+              "ToolTip": "E:\\DACN\\FE_DACN\\API_ThiTracNghiem\\API_ThiTracNghiem\\Services\\AuthService\\appsettings.json",
+              "RelativeToolTip": "API_ThiTracNghiem\\Services\\AuthService\\appsettings.json",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAkAAACQAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2025-11-15T08:58:57.819Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "appsettings.json",
+              "DocumentMoniker": "E:\\DACN\\FE_DACN\\API_ThiTracNghiem\\API_ThiTracNghiem\\Services\\ChatService\\appsettings.json",
+              "RelativeDocumentMoniker": "API_ThiTracNghiem\\Services\\ChatService\\appsettings.json",
+              "ToolTip": "E:\\DACN\\FE_DACN\\API_ThiTracNghiem\\API_ThiTracNghiem\\Services\\ChatService\\appsettings.json",
+              "RelativeToolTip": "API_ThiTracNghiem\\Services\\ChatService\\appsettings.json",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2025-11-15T08:58:51.042Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "appsettings.json",
+              "DocumentMoniker": "E:\\DACN\\FE_DACN\\API_ThiTracNghiem\\API_ThiTracNghiem\\appsettings.json",
+              "RelativeDocumentMoniker": "API_ThiTracNghiem\\appsettings.json",
+              "ToolTip": "E:\\DACN\\FE_DACN\\API_ThiTracNghiem\\API_ThiTracNghiem\\appsettings.json",
+              "RelativeToolTip": "API_ThiTracNghiem\\appsettings.json",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAkAAACCAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2025-11-15T08:57:33.673Z"
+            }
+          ]
+        }
+      ]
     }
   ]
 }
