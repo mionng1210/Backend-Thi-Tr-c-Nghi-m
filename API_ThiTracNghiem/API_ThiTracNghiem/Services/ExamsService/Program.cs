@@ -63,15 +63,25 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        policy.WithOrigins(
+            "http://localhost:3000",
+            "http://localhost:4000",
+            "http://localhost:5173",
+            "http://localhost:5505"
+        )
+        .AllowAnyMethod()
+        .AllowAnyHeader()
+        .AllowCredentials();
     });
 });
 
 // Add Database Context
 builder.Services.AddDbContext<ExamsDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        sql => sql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)
+    )
+);
 
 // Add Redis connection & exam progress cache
 var redisConn = builder.Configuration.GetSection("Redis").GetValue<string>("ConnectionString") ?? "localhost:6379";

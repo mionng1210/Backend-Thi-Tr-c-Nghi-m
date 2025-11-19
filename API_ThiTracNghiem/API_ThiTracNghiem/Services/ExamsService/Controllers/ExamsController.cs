@@ -356,6 +356,132 @@ namespace ExamsService.Controllers
         }
 
         /// <summary>
+        /// Lấy thông tin exam attempt theo attemptId
+        /// </summary>
+        [HttpGet("attempts/{attemptId}")]
+        [Authorize]
+        public async Task<IActionResult> GetExamAttempt(int attemptId)
+        {
+            try
+            {
+                _logger.LogInformation("GetExamAttempt called with attemptId: {AttemptId}", attemptId);
+                
+                var userId = HttpContext.GetSyncedUserId();
+                if (!userId.HasValue)
+                {
+                    _logger.LogWarning("GetExamAttempt: User not authenticated");
+                    return Unauthorized(ApiResponse.ErrorResponse("Không thể xác thực người dùng", 401));
+                }
+                
+                _logger.LogInformation("GetExamAttempt: UserId: {UserId}, AttemptId: {AttemptId}", userId.Value, attemptId);
+
+                // Kiểm tra xem ExamAttempt có tồn tại không (không check userId trước)
+                var anyAttempt = await _context.ExamAttempts
+                    .FirstOrDefaultAsync(ea => ea.ExamAttemptId == attemptId && !ea.HasDelete);
+                
+                if (anyAttempt == null)
+                {
+                    _logger.LogWarning("GetExamAttempt: No exam attempt found with attemptId: {AttemptId}", attemptId);
+                    return NotFound(ApiResponse.ErrorResponse($"Không tìm thấy bài thi với ID: {attemptId}", 404));
+                }
+                
+                _logger.LogInformation("GetExamAttempt: Found attempt - UserId: {AttemptUserId}, Status: {Status}, ExamId: {ExamId}", 
+                    anyAttempt.UserId, anyAttempt.Status, anyAttempt.ExamId);
+
+                // Get exam attempt with exam info
+                var examAttempt = await _context.ExamAttempts
+                    .Include(ea => ea.Exam)
+                        .ThenInclude(e => e.Course)
+                    .FirstOrDefaultAsync(ea => ea.ExamAttemptId == attemptId && ea.UserId == userId.Value && !ea.HasDelete);
+
+                if (examAttempt == null)
+                {
+                    _logger.LogWarning("GetExamAttempt: Attempt exists but userId mismatch. Expected: {ExpectedUserId}, Found: {FoundUserId}", 
+                        userId.Value, anyAttempt.UserId);
+                    return StatusCode(403, ApiResponse.ErrorResponse("Bạn không có quyền truy cập bài thi này", 403));
+                }
+
+                // Check if attempt is still in progress
+                if (examAttempt.Status != "InProgress")
+                {
+                    _logger.LogWarning("GetExamAttempt: Attempt status is not InProgress: {Status}", examAttempt.Status);
+                    return BadRequest(ApiResponse.ErrorResponse($"Bài thi này đã {examAttempt.Status}", 400));
+                }
+
+                // Get exam questions
+                _logger.LogInformation("GetExamAttempt: Loading questions for examId: {ExamId}", examAttempt.ExamId);
+                
+                var examQuestions = await _context.ExamQuestions
+                    .Include(eq => eq.Question)
+                    .ThenInclude(q => q.Bank)
+                    .Where(eq => eq.ExamId == examAttempt.ExamId && !eq.HasDelete && !eq.Question.HasDelete)
+                    .OrderBy(eq => eq.SequenceIndex)
+                    .ToListAsync();
+
+                _logger.LogInformation("GetExamAttempt: Found {QuestionCount} questions", examQuestions.Count);
+
+                // Prepare questions for response
+                var questions = new List<ExamQuestionDto>();
+                foreach (var examQuestion in examQuestions)
+                {
+                    var answerOptions = await _context.AnswerOptions
+                         .Where(ao => ao.QuestionId == examQuestion.QuestionId && !ao.HasDelete)
+                         .Select(ao => new AnswerOptionDto
+                         {
+                             OptionId = ao.OptionId,
+                             Content = ao.Content,
+                             IsCorrect = false, // Don't reveal correct answers
+                             SequenceIndex = ao.OrderIndex
+                         })
+                         .OrderBy(ao => ao.SequenceIndex)
+                         .ToListAsync();
+
+                     questions.Add(new ExamQuestionDto
+                     {
+                         QuestionId = examQuestion.QuestionId,
+                         Content = examQuestion.Question.Content,
+                         QuestionType = examQuestion.Question.QuestionType,
+                         Difficulty = examQuestion.Question.Difficulty,
+                         Marks = examQuestion.Marks,
+                         Options = answerOptions
+                     });
+                }
+
+                // Randomize questions if enabled (same order as when started)
+                if (examAttempt.Exam.RandomizeQuestions)
+                {
+                    // Note: This should use the same randomization seed as when the attempt was created
+                    // For now, we'll just keep the order from the database
+                }
+
+                var response = new StartExamResponse
+                {
+                    ExamAttemptId = examAttempt.ExamAttemptId,
+                    ExamId = examAttempt.ExamId,
+                    ExamTitle = examAttempt.Exam.Title,
+                    VariantCode = examAttempt.VariantCode,
+                    StartTime = examAttempt.StartTime,
+                    EndTime = examAttempt.EndTime,
+                    DurationMinutes = examAttempt.Exam.DurationMinutes ?? 0,
+                    Questions = questions,
+                    TotalMarks = examAttempt.Exam.TotalMarks ?? 0,
+                    PassingMark = examAttempt.Exam.PassingMark ?? 0,
+                    Instructions = examAttempt.Exam.Description ?? ""
+                };
+
+                _logger.LogInformation("GetExamAttempt: Returning response with {QuestionCount} questions, AttemptId: {AttemptId}", 
+                    questions.Count, examAttempt.ExamAttemptId);
+
+                return Ok(ApiResponse.SuccessResponse(response));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting exam attempt {AttemptId}", attemptId);
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi lấy thông tin bài thi", 500));
+            }
+        }
+
+        /// <summary>
         /// Lấy chi tiết đề thi (thời gian, câu hỏi, mô tả)
         /// </summary>
         [HttpGet("{id}")]
@@ -1116,14 +1242,43 @@ namespace ExamsService.Controllers
                 // Require successful purchase/enrollment for paid exams
                 var price = exam.Course?.Price ?? 0m;
                 var isFree = (exam.Course?.IsFree == true) || price <= 0m;
+                
                 if (!isFree)
                 {
+                    // Bài thi có phí: kiểm tra enrollment
                     var hasActiveEnrollment = await _context.ExamEnrollments
                         .AnyAsync(en => en.ExamId == id && en.UserId == userId.Value && en.Status == "Active" && !en.HasDelete);
 
                     if (!hasActiveEnrollment)
                     {
                         return StatusCode(403, ApiResponse.ErrorResponse("Bạn chưa thanh toán để làm bài thi này", 403));
+                    }
+                }
+                else
+                {
+                    // Bài thi miễn phí: tự động tạo enrollment nếu chưa có
+                    var existingEnrollment = await _context.ExamEnrollments
+                        .FirstOrDefaultAsync(en => en.ExamId == id && en.UserId == userId.Value && !en.HasDelete);
+
+                    if (existingEnrollment == null)
+                    {
+                        // Tạo enrollment mới cho bài thi miễn phí
+                        var enrollment = new ExamEnrollment
+                        {
+                            ExamId = id,
+                            UserId = userId.Value,
+                            Status = "Active",
+                            CreatedAt = DateTime.UtcNow,
+                            HasDelete = false
+                        };
+                        _context.ExamEnrollments.Add(enrollment);
+                        await _context.SaveChangesAsync();
+                    }
+                    else if (existingEnrollment.Status != "Active")
+                    {
+                        // Kích hoạt enrollment nếu đã tồn tại nhưng chưa active
+                        existingEnrollment.Status = "Active";
+                        await _context.SaveChangesAsync();
                     }
                 }
 

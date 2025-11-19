@@ -38,10 +38,30 @@ namespace API_ThiTracNghiem.Infrastructure
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unhandled exception");
+                _logger.LogError(ex, "Unhandled exception: {ExceptionType} - {Message}. StackTrace: {StackTrace}", 
+                    ex.GetType().Name, ex.Message, ex.StackTrace);
+                
+                // Kiểm tra xem response đã được gửi chưa
+                if (context.Response.HasStarted)
+                {
+                    _logger.LogWarning("Response has already started, cannot modify status code");
+                    return;
+                }
+
                 context.Response.ContentType = "application/json";
                 context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                var response = ApiResponse.Fail("Internal Server Error", 500);
+                
+                // Trả về thông báo lỗi chi tiết hơn
+                var environment = context.RequestServices.GetService<Microsoft.Extensions.Hosting.IHostEnvironment>();
+                var errorMessage = environment?.IsDevelopment() == true
+                    ? $"Internal Server Error: {ex.GetType().Name} - {ex.Message}"
+                    : "Đã xảy ra lỗi khi xử lý yêu cầu. Vui lòng thử lại sau.";
+                
+                var response = new { 
+                    message = errorMessage,
+                    statusCode = 500
+                };
+                
                 await context.Response.WriteAsync(JsonSerializer.Serialize(response));
             }
         }

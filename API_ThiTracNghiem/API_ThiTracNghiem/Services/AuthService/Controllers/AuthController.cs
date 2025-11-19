@@ -10,6 +10,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using API_ThiTracNghiem.Shared.Contracts;
 using Shared.Contracts.Auth;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Hosting;
 
 namespace API_ThiTracNghiem.Services.AuthService.Controllers;
 
@@ -20,12 +22,16 @@ public class AuthController : ControllerBase
     private readonly AuthDbContext _db;
     private readonly IEmailService _email;
     private readonly ITokenService _tokenService;
+    private readonly ILogger<AuthController> _logger;
+    private readonly IHostEnvironment _environment;
 
-    public AuthController(AuthDbContext db, IEmailService email, ITokenService tokenService)
+    public AuthController(AuthDbContext db, IEmailService email, ITokenService tokenService, ILogger<AuthController> logger, IHostEnvironment environment)
     {
         _db = db;
         _email = email;
         _tokenService = tokenService;
+        _logger = logger;
+        _environment = environment;
     }
 
     [HttpPost("register")]
@@ -111,32 +117,136 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        if (!ModelState.IsValid) return BadRequest(ModelState);
-
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
-        if (user == null) return Unauthorized(new { message = "Email hoặc mật khẩu không đúng" });
-
-        var ok = BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash);
-        if (!ok) return Unauthorized(new { message = "Email hoặc mật khẩu không đúng" });
-
-        var otpCode = _tokenService.GenerateOtp();
-        var otp = new OTP
+        try
         {
-            UserId = user.UserId,
-            OtpCode = otpCode,
-            Purpose = "login",
-            ExpiresAt = DateTime.UtcNow.AddMinutes(5),
-            IsUsed = false,
-            CreatedAt = DateTime.UtcNow
-        };
-        await _db.OTPs.AddAsync(otp);
-        await _db.SaveChangesAsync();
+            _logger.LogInformation("=== Login attempt started ===");
+            _logger.LogInformation("Login attempt for email: {Email}", request?.Email ?? "null");
 
-        var subject = "Mã OTP đăng nhập";
-        var body = $"OTP đăng nhập của bạn là <b>{otpCode}</b> (hết hạn sau 5 phút).";
-        await _email.SendAsync(user.Email!, subject, body);
+            if (request == null)
+            {
+                _logger.LogWarning("Login request is null");
+                return BadRequest(new { message = "Request không hợp lệ" });
+            }
 
-        return Ok(new { message = "Đã gửi OTP tới email. Vui lòng xác minh." });
+            if (!ModelState.IsValid)
+            {
+                _logger.LogWarning("ModelState is invalid for email: {Email}", request.Email);
+                return BadRequest(new { message = "Dữ liệu không hợp lệ", errors = ModelState });
+            }
+
+            _logger.LogInformation("Looking up user with email: {Email}", request.Email);
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+            if (user == null)
+            {
+                _logger.LogWarning("User not found for email: {Email}", request.Email);
+                return Unauthorized(new { message = "Email hoặc mật khẩu không đúng" });
+            }
+
+            _logger.LogInformation("User found: {UserId}, verifying password", user.UserId);
+
+            if (string.IsNullOrEmpty(user.PasswordHash))
+            {
+                _logger.LogError("User {UserId} has no password hash", user.UserId);
+                return StatusCode(500, new { message = "Lỗi hệ thống. Vui lòng liên hệ quản trị viên." });
+            }
+
+            var ok = BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash);
+            if (!ok)
+            {
+                _logger.LogWarning("Password verification failed for user: {UserId}", user.UserId);
+                return Unauthorized(new { message = "Email hoặc mật khẩu không đúng" });
+            }
+
+            _logger.LogInformation("Password verified successfully for user: {UserId}", user.UserId);
+
+            // Phát sinh OTP login và gửi email
+            string otpCode;
+            try
+            {
+                otpCode = _tokenService.GenerateOtp();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to generate OTP for user {Email}", user.Email);
+                return StatusCode(500, new { message = "Không thể tạo mã OTP. Vui lòng thử lại sau." });
+            }
+
+            var otp = new OTP
+            {
+                UserId = user.UserId,
+                OtpCode = otpCode,
+                Purpose = "login",
+                ExpiresAt = DateTime.UtcNow.AddMinutes(5),
+                IsUsed = false,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            try
+            {
+                await _db.OTPs.AddAsync(otp);
+                await _db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to save OTP to database for user {Email}", user.Email);
+                return StatusCode(500, new { message = "Không thể lưu mã OTP. Vui lòng thử lại sau." });
+            }
+
+            // Gửi email OTP - bắt lỗi để tránh 500 nếu email service fail
+            var subject = "Mã OTP đăng nhập";
+            string body = $"OTP đăng nhập của bạn là <b>{otpCode}</b> (hết hạn sau 5 phút).";
+
+            bool emailSent = false;
+            if (!string.IsNullOrEmpty(user.Email))
+            {
+                try
+                {
+                    await _email.SendAsync(user.Email, subject, body);
+                    emailSent = true;
+                    _logger.LogInformation("OTP email sent successfully to {Email}", user.Email);
+                }
+                catch (Exception ex)
+                {
+                    // Log lỗi nhưng vẫn trả về success vì OTP đã được lưu vào DB
+                    _logger.LogError(ex, "Failed to send login OTP email to {Email}. OTP code: {OtpCode}. Error: {ErrorMessage}",
+                        user.Email, otpCode, ex.Message);
+                    emailSent = false;
+                }
+            }
+            else
+            {
+                _logger.LogWarning("User {UserId} has no email address configured", user.UserId);
+            }
+
+            _logger.LogInformation("OTP created and saved successfully for user: {UserId}. OTP Code: {OtpCode} (logged for debugging)", user.UserId, otpCode);
+
+            // Trả về success - KHÔNG hiển thị OTP trong response vì lý do bảo mật
+            var response = new
+            {
+                message = emailSent
+                    ? "Đã gửi OTP tới email. Vui lòng xác minh."
+                    : "Đã tạo mã OTP nhưng không thể gửi email. Vui lòng liên hệ quản trị viên hoặc thử lại sau.",
+                requiresVerification = true
+            };
+
+            _logger.LogInformation("=== Login attempt completed successfully for user: {UserId} ===", user.UserId);
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "=== UNEXPECTED ERROR in Login endpoint === Email: {Email}, Exception Type: {ExceptionType}, Message: {Message}, StackTrace: {StackTrace}",
+                request?.Email ?? "null",
+                ex.GetType().Name,
+                ex.Message,
+                ex.StackTrace);
+
+            // Trả về thông báo lỗi chi tiết hơn trong dev mode
+            var errorMessage = _environment?.IsDevelopment() == true
+                ? $"Lỗi: {ex.GetType().Name} - {ex.Message}"
+                : "Đã xảy ra lỗi khi xử lý yêu cầu đăng nhập. Vui lòng thử lại sau.";
+
+            return StatusCode(500, new { message = errorMessage });
+        }
     }
 
     [HttpPost("verify-login-otp")]
@@ -174,7 +284,21 @@ public class AuthController : ControllerBase
         _db.AuthSessions.Add(session);
         await _db.SaveChangesAsync();
 
-        return Ok(new { token, expiresAt });
+        // Trả về thông tin user cùng với token
+        var userResponse = new
+        {
+            userId = user.UserId,
+            email = user.Email,
+            fullName = user.FullName,
+            phoneNumber = user.PhoneNumber,
+            role = roleName,
+            roleId = user.RoleId,
+            avatarUrl = user.AvatarUrl,
+            isEmailVerified = user.IsEmailVerified,
+            status = user.Status
+        };
+
+        return Ok(new { token, expiresAt, user = userResponse });
     }
 
     [AllowAnonymous]

@@ -8,12 +8,16 @@ using API_ThiTracNghiem.Services;
 using API_ThiTracNghiem.Repositories;
 using API_ThiTracNghiem.Infrastructure;
 using API_ThiTracNghiem.Contracts;
+using API_ThiTracNghiem.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add(new API_ThiTracNghiem.Infrastructure.InputSanitizationFilter());
+});
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -49,6 +53,22 @@ builder.Services.AddSwaggerGen(options =>
         }
     };
     options.AddSecurityRequirement(securityRequirement);
+});
+
+// CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("FrontendPolicy", policy =>
+    {
+        policy.WithOrigins(
+            builder.Configuration["Cors:FrontendOrigin"] ?? "http://localhost:5173",
+            builder.Configuration["Cors:FrontendOrigin2"] ?? "http://127.0.0.1:5173"
+        )
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials()
+        .WithExposedHeaders("Authorization");
+    });
 });
 
 // DbContext + SQL Server
@@ -118,11 +138,16 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseCors("FrontendPolicy");
+
 app.UseAuthentication();
 app.UseAuthorization();
 
 // Middleware xử lý exception chuẩn
 app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+// Ghi log truy cập trái phép
+app.UseRoleAuthorizationLogging();
 
 app.MapControllers();
 

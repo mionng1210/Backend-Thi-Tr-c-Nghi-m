@@ -37,6 +37,7 @@ namespace API_ThiTracNghiem.Data
         public DbSet<ChatMessage> ChatMessages { get; set; } = null!;
         public DbSet<AiRequest> AiRequests { get; set; } = null!;
         public DbSet<Statistics> Statistics { get; set; } = null!;
+        public DbSet<AccessLog> AccessLogs { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

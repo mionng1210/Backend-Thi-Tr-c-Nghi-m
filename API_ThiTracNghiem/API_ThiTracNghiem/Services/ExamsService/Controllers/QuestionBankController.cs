@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore;
 using ExamsService.Data;
 using ExamsService.Models;
 using System.Text.Json;
+using System.Text;
+using System.Data;
+using System.Data.Common;
 
 namespace ExamsService.Controllers
 {
@@ -182,87 +185,115 @@ namespace ExamsService.Controllers
         {
             try
             {
-                var query = _context.Questions
-                    .Include(q => q.Bank)
-                    .ThenInclude(b => b.Subject)
-                    .Where(q => !q.HasDelete);
-
-                // Filter by subject if provided
-                if (filter.SubjectId.HasValue)
+                var page = filter.Page <= 0 ? 1 : filter.Page;
+                var pageSize = filter.PageSize <= 0 ? 10 : Math.Min(filter.PageSize, 100);
+                var offset = (page - 1) * pageSize;
+                int? subjectId = filter.SubjectId;
+                var questionType = string.IsNullOrWhiteSpace(filter.QuestionType) ? null : filter.QuestionType;
+                var difficulty = string.IsNullOrWhiteSpace(filter.Difficulty) ? null : filter.Difficulty;
+                var tags = string.IsNullOrWhiteSpace(filter.Tags) ? null : filter.Tags;
+                var searchContent = string.IsNullOrWhiteSpace(filter.SearchContent) ? null : filter.SearchContent;
+                static void AddParam(DbCommand c, string n, object? v)
                 {
-                    query = query.Where(q => q.Bank != null && q.Bank.SubjectId == filter.SubjectId.Value);
+                    var p = c.CreateParameter();
+                    p.ParameterName = n;
+                    p.Value = v ?? DBNull.Value;
+                    c.Parameters.Add(p);
                 }
 
-                // Filter by question type if provided
-                if (!string.IsNullOrEmpty(filter.QuestionType))
+                var conn = _context.Database.GetDbConnection();
+                if (conn.State != ConnectionState.Open) await conn.OpenAsync();
+
+                using var cmdCount = conn.CreateCommand();
+                cmdCount.CommandText = "SELECT COUNT(*) FROM [Questions] q LEFT JOIN [QuestionBanks] qb ON qb.[BankId]=q.[BankId] WHERE q.[HasDelete]=0 AND (@SubjectId IS NULL OR qb.[SubjectId]=@SubjectId) AND (@QuestionType IS NULL OR q.[QuestionType]=@QuestionType) AND (@Difficulty IS NULL OR q.[Difficulty]=@Difficulty) AND (@SearchContent IS NULL OR q.[Content] LIKE '%' + @SearchContent + '%') AND (@Tags IS NULL OR q.[TagsJson] LIKE '%' + @Tags + '%');";
+                AddParam(cmdCount, "@SubjectId", subjectId);
+                AddParam(cmdCount, "@QuestionType", questionType);
+                AddParam(cmdCount, "@Difficulty", difficulty);
+                AddParam(cmdCount, "@SearchContent", searchContent);
+                AddParam(cmdCount, "@Tags", tags);
+                var totalCount = Convert.ToInt32(await cmdCount.ExecuteScalarAsync());
+
+                using var cmdList = conn.CreateCommand();
+                cmdList.CommandText = "SELECT q.[QuestionId],q.[Content],q.[QuestionType],q.[Difficulty],q.[Marks],q.[TagsJson],qb.[SubjectId],s.[Name] AS [SubjectName],q.[CreatedAt] FROM [Questions] q LEFT JOIN [QuestionBanks] qb ON qb.[BankId]=q.[BankId] LEFT JOIN [Subjects] s ON s.[SubjectId]=qb.[SubjectId] WHERE q.[HasDelete]=0 AND (@SubjectId IS NULL OR qb.[SubjectId]=@SubjectId) AND (@QuestionType IS NULL OR q.[QuestionType]=@QuestionType) AND (@Difficulty IS NULL OR q.[Difficulty]=@Difficulty) AND (@SearchContent IS NULL OR q.[Content] LIKE '%' + @SearchContent + '%') AND (@Tags IS NULL OR q.[TagsJson] LIKE '%' + @Tags + '%') ORDER BY q.[CreatedAt] DESC OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
+                AddParam(cmdList, "@SubjectId", subjectId);
+                AddParam(cmdList, "@QuestionType", questionType);
+                AddParam(cmdList, "@Difficulty", difficulty);
+                AddParam(cmdList, "@SearchContent", searchContent);
+                AddParam(cmdList, "@Tags", tags);
+                AddParam(cmdList, "@Offset", offset);
+                AddParam(cmdList, "@PageSize", pageSize);
+
+                var questions = new List<QuestionBankResponse>();
+                var questionIds = new List<int>();
+                using (var r = await cmdList.ExecuteReaderAsync())
                 {
-                    query = query.Where(q => q.QuestionType == filter.QuestionType);
-                }
-
-                // Filter by difficulty if provided
-                if (!string.IsNullOrEmpty(filter.Difficulty))
-                {
-                    query = query.Where(q => q.Difficulty == filter.Difficulty);
-                }
-
-                // Search in content if provided
-                if (!string.IsNullOrEmpty(filter.SearchContent))
-                {
-                    query = query.Where(q => q.Content.Contains(filter.SearchContent));
-                }
-
-                // Filter by tags if provided
-                if (!string.IsNullOrEmpty(filter.Tags))
-                {
-                    query = query.Where(q => q.TagsJson != null && q.TagsJson.Contains(filter.Tags));
-                }
-
-                // Get total count for pagination
-                var totalCount = await query.CountAsync();
-
-                // Apply pagination
-                var questions = await query
-                    .OrderByDescending(q => q.CreatedAt)
-                    .Skip((filter.Page - 1) * filter.PageSize)
-                    .Take(filter.PageSize)
-                    .ToListAsync();
-
-                // Get answer options for each question
-                var questionIds = questions.Select(q => q.QuestionId).ToList();
-                var answerOptions = await _context.AnswerOptions
-                    .Where(ao => questionIds.Contains(ao.QuestionId) && !ao.HasDelete)
-                    .ToListAsync();
-
-                // Build response
-                var questionResponses = questions.Select(q => new QuestionBankResponse
-                {
-                    QuestionId = q.QuestionId,
-                    Content = q.Content,
-                    QuestionType = q.QuestionType,
-                    Difficulty = q.Difficulty,
-                    Marks = q.Marks,
-                    Tags = q.TagsJson,
-                    SubjectId = q.Bank?.SubjectId,
-                    SubjectName = q.Bank?.Subject?.Name,
-                    CreatedAt = q.CreatedAt,
-                    AnswerOptions = answerOptions
-                        .Where(ao => ao.QuestionId == q.QuestionId)
-                        .Select(ao => new AnswerOptionResponse
+                    while (await r.ReadAsync())
+                    {
+                        var qid = r.GetInt32(0);
+                        questionIds.Add(qid);
+                        questions.Add(new QuestionBankResponse
                         {
-                            OptionId = ao.OptionId,
-                            Content = ao.Content,
-                            IsCorrect = ao.IsCorrect,
-                            OrderIndex = ao.OrderIndex
-                        }).ToList()
-                }).ToList();
+                            QuestionId = qid,
+                            Content = r.GetString(1),
+                            QuestionType = r.IsDBNull(2) ? null : r.GetString(2),
+                            Difficulty = r.IsDBNull(3) ? null : r.GetString(3),
+                            Marks = r.IsDBNull(4) ? (decimal?)null : r.GetDecimal(4),
+                            Tags = r.IsDBNull(5) ? null : r.GetString(5),
+                            SubjectId = r.IsDBNull(6) ? (int?)null : r.GetInt32(6),
+                            SubjectName = r.IsDBNull(7) ? null : r.GetString(7),
+                            CreatedAt = r.GetDateTime(8),
+                            AnswerOptions = new List<AnswerOptionResponse>()
+                        });
+                    }
+                }
+
+                var optionsByQuestion = new Dictionary<int, List<AnswerOptionResponse>>();
+                if (questionIds.Count > 0)
+                {
+                    using var cmdAns = conn.CreateCommand();
+                    var sb = new StringBuilder();
+                    for (int i = 0; i < questionIds.Count; i++)
+                    {
+                        var pn = "@qid" + i;
+                        if (i > 0) sb.Append(", ");
+                        sb.Append(pn);
+                        var p = cmdAns.CreateParameter();
+                        p.ParameterName = pn;
+                        p.Value = questionIds[i];
+                        cmdAns.Parameters.Add(p);
+                    }
+                    cmdAns.CommandText = "SELECT [OptionId],[QuestionId],[Content],[IsCorrect],[OrderIndex] FROM [AnswerOptions] WHERE [HasDelete]=0 AND [QuestionId] IN (" + sb.ToString() + ");";
+                    using var r2 = await cmdAns.ExecuteReaderAsync();
+                    while (await r2.ReadAsync())
+                    {
+                        var qid = r2.GetInt32(1);
+                        if (!optionsByQuestion.TryGetValue(qid, out var list))
+                        {
+                            list = new List<AnswerOptionResponse>();
+                            optionsByQuestion[qid] = list;
+                        }
+                        list.Add(new AnswerOptionResponse
+                        {
+                            OptionId = r2.GetInt32(0),
+                            Content = r2.GetString(2),
+                            IsCorrect = r2.GetBoolean(3),
+                            OrderIndex = r2.IsDBNull(4) ? (int?)null : r2.GetInt32(4)
+                        });
+                    }
+                }
+
+                foreach (var q in questions)
+                {
+                    if (optionsByQuestion.TryGetValue(q.QuestionId, out var list)) q.AnswerOptions = list;
+                }
 
                 var response = new QuestionBankListResponse
                 {
-                    Questions = questionResponses,
+                    Questions = questions,
                     TotalCount = totalCount,
-                    Page = filter.Page,
-                    PageSize = filter.PageSize,
-                    TotalPages = (int)Math.Ceiling((double)totalCount / filter.PageSize)
+                    Page = page,
+                    PageSize = pageSize,
+                    TotalPages = (int)Math.Ceiling((double)totalCount / pageSize)
                 };
 
                 return Ok(new { message = "Lấy danh sách câu hỏi thành công", data = response });

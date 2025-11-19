@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Ocelot" Version="24.0.1" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.*" />
@@ -26,21 +27,25 @@
     <Compile Remove="Services\AuthService\**\*.cs" />
     <Compile Remove="Services\ExamsService\**\*.cs" />
     <Compile Remove="Services\MaterialsService\**\*.cs" />
+    <Compile Remove="Services\ChatService\**\*.cs" />
     <Compile Remove="Services\MaterialsService.Tests\**\*.cs" />
     <Compile Remove="Shared\**\*.cs" />
     <EmbeddedResource Remove="Services\AuthService\**\*.*" />
     <EmbeddedResource Remove="Services\ExamsService\**\*.*" />
     <EmbeddedResource Remove="Services\MaterialsService\**\*.*" />
+    <EmbeddedResource Remove="Services\ChatService\**\*.*" />
     <EmbeddedResource Remove="Services\MaterialsService.Tests\**\*.*" />
     <EmbeddedResource Remove="Shared\**\*.*" />
     <None Remove="Services\AuthService\**\*.*" />
     <None Remove="Services\ExamsService\**\*.*" />
     <None Remove="Services\MaterialsService\**\*.*" />
+    <None Remove="Services\ChatService\**\*.*" />
     <None Remove="Services\MaterialsService.Tests\**\*.*" />
     <None Remove="Shared\**\*.*" />
     <Content Remove="Services\AuthService\**\*.*" />
     <Content Remove="Services\ExamsService\**\*.*" />
     <Content Remove="Services\MaterialsService\**\*.*" />
+    <Content Remove="Services\ChatService\**\*.*" />
     <Content Remove="Services\MaterialsService.Tests\**\*.*" />
     <Content Remove="Shared\**\*.*" />
   </ItemGroup>
