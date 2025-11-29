@@ -8,11 +8,11 @@
 # - JWT secret keys
 # - SMTP credentials (email/password)
 # - Cloudinary API keys and secrets
-# - PayOS API keys and checksum keys
+# - PayOS API keys and checksum keys (PAYOS_CLIENT_ID, PAYOS_API_KEY, PAYOS_CHECKSUM_KEY)
 # - Supabase keys (AnonKey, ServiceKey)
 # - Gemini API keys
 **/appsettings.json
-!**/appsettings.Development.json
+**/appsettings.Development.json
 !**/appsettings.Example.json
 !**/appsettings.Template.json
 
