@@ -25,6 +25,17 @@ namespace API_ThiTracNghiem.Contracts
         public string? Status { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
+        public int? CreatedBy { get; set; }
+        public string? CreatedByName { get; set; }
+        // ✅ NEW FIELDS FOR CERTIFICATION EXAMS
+        public string? ImageUrl { get; set; }
+        public decimal? Price { get; set; }
+        public decimal? OriginalPrice { get; set; }
+        public string? Level { get; set; }
+        public string? Difficulty { get; set; }
+        public string? Provider { get; set; }
+        public string? FeaturesJson { get; set; }
+        public string? ValidPeriod { get; set; }
     }
 
     // DTO for exam details with questions
@@ -35,6 +46,8 @@ namespace API_ThiTracNghiem.Contracts
         public string? Description { get; set; }
         public int? CourseId { get; set; }
         public string? CourseName { get; set; }
+        public decimal? CoursePrice { get; set; }
+        public bool IsCourseFree { get; set; }
         public int? TeacherId { get; set; }
         public string? TeacherName { get; set; }
         public int? SubjectId { get; set; }
@@ -51,7 +64,18 @@ namespace API_ThiTracNghiem.Contracts
         public string? Status { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
+        public int? CreatedBy { get; set; }
+        public string? CreatedByName { get; set; }
         public List<ExamQuestionDto> Questions { get; set; } = new();
+        // ✅ NEW FIELDS FOR CERTIFICATION EXAMS
+        public string? ImageUrl { get; set; }
+        public decimal? Price { get; set; }
+        public decimal? OriginalPrice { get; set; }
+        public string? Level { get; set; }
+        public string? Difficulty { get; set; }
+        public string? Provider { get; set; }
+        public string? FeaturesJson { get; set; }
+        public string? ValidPeriod { get; set; }
     }
 
     // DTO for exam questions
@@ -113,6 +137,33 @@ namespace API_ThiTracNghiem.Contracts
         public string? Status { get; set; } = "Draft";
 
         public List<CreateExamQuestionRequest> Questions { get; set; } = new();
+        
+        // ✅ NEW FIELDS FOR CERTIFICATION EXAMS
+        public int? SubjectId { get; set; }
+        
+        [MaxLength(500)]
+        public string? ImageUrl { get; set; }
+        
+        [Range(0, 10000000)]
+        public decimal? Price { get; set; }
+        
+        [Range(0, 10000000)]
+        public decimal? OriginalPrice { get; set; }
+        
+        [MaxLength(50)]
+        public string? Level { get; set; }
+        
+        [MaxLength(50)]
+        public string? Difficulty { get; set; }
+        
+        [MaxLength(100)]
+        public string? Provider { get; set; }
+        
+        [MaxLength(2000)]
+        public string? FeaturesJson { get; set; }
+        
+        [MaxLength(50)]
+        public string? ValidPeriod { get; set; }
     }
 
     // Request DTO for adding questions to exam
@@ -161,5 +212,96 @@ namespace API_ThiTracNghiem.Contracts
 
         [MaxLength(50)]
         public string? Status { get; set; }
+        
+        // ✅ NEW FIELDS FOR CERTIFICATION EXAMS
+        public int? SubjectId { get; set; }
+        
+        [MaxLength(500)]
+        public string? ImageUrl { get; set; }
+        
+        [Range(0, 10000000)]
+        public decimal? Price { get; set; }
+        
+        [Range(0, 10000000)]
+        public decimal? OriginalPrice { get; set; }
+        
+        [MaxLength(50)]
+        public string? Level { get; set; }
+        
+        [MaxLength(50)]
+        public string? Difficulty { get; set; }
+        
+        [MaxLength(100)]
+        public string? Provider { get; set; }
+        
+        [MaxLength(2000)]
+        public string? FeaturesJson { get; set; }
+        
+        [MaxLength(50)]
+        public string? ValidPeriod { get; set; }
+    }
+
+    // Request DTO for mixing questions based on difficulty
+    public class MixQuestionsRequest
+    {
+        [Range(1, 100)]
+        public int NumberOfVariants { get; set; } = 1;
+
+        [Range(1, 500)]
+        public int TotalQuestions { get; set; }
+
+        public List<DifficultyDistribution> DifficultyDistribution { get; set; } = new();
+    }
+
+    // DTO for difficulty distribution
+    public class DifficultyDistribution
+    {
+        [Required]
+        [MaxLength(50)]
+        public string Difficulty { get; set; } = string.Empty; // Easy, Medium, Hard
+
+        [Range(1, 500)]
+        public int QuestionCount { get; set; }
+
+        [Range(0.01, 100)]
+        public decimal MarksPerQuestion { get; set; }
+    }
+
+    // Response DTO for mixed questions
+    public class MixQuestionsResponse
+    {
+        public int ExamId { get; set; }
+        public List<ExamVariant> Variants { get; set; } = new();
+        public string Message { get; set; } = string.Empty;
+    }
+
+    // DTO for exam variant
+    public class ExamVariant
+    {
+        public string VariantCode { get; set; } = string.Empty;
+        public List<ExamQuestionDto> Questions { get; set; } = new();
+        public decimal TotalMarks { get; set; }
+    }
+
+    // Request DTO for starting an exam
+    public class StartExamRequest
+    {
+        public string? VariantCode { get; set; }
+    }
+
+    // Response DTO for starting an exam
+    public class StartExamResponse
+    {
+        public int ExamAttemptId { get; set; }
+        public int ExamId { get; set; }
+        public string ExamTitle { get; set; } = string.Empty;
+        public string? VariantCode { get; set; }
+        public DateTime StartTime { get; set; }
+        public DateTime? EndTime { get; set; }
+        public int DurationMinutes { get; set; }
+        public List<ExamQuestionDto> Questions { get; set; } = new();
+        public decimal TotalMarks { get; set; }
+        public decimal PassingMark { get; set; }
+        public string Instructions { get; set; } = string.Empty;
     }
 }

@@ -10,10 +10,30 @@ using MaterialsService.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http.Features;
 using MaterialsService.Integrations;
+using API_ThiTracNghiem.Services;
+using API_ThiTracNghiem.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+// Add CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.WithOrigins(
+            "http://localhost:3000",
+            "http://localhost:4000",
+            "http://localhost:4100",
+            "http://localhost:5173",
+            "http://localhost:5505"
+        )
+        .AllowAnyMethod()
+        .AllowAnyHeader()
+        .AllowCredentials();
+    });
+});
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -85,6 +105,10 @@ builder.Services.AddHttpClient();
 builder.Services.AddScoped<ICloudStorage, CloudinaryService>();
 builder.Services.AddScoped<IDocumentStorage, SupabaseStorage>();
 
+// User Sync Service
+builder.Services.AddHttpClient<IUserSyncService, UserSyncService>();
+builder.Services.AddScoped<IUserSyncService, UserSyncService>();
+
 // Increase multipart/form-data limit (to 500 MB)
 builder.Services.Configure<FormOptions>(options =>
 {
@@ -103,8 +127,13 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseCors("AllowAll");
 app.UseRouting();
 app.UseAuthentication();
+
+// User Sync Middleware - Đặt sau Authentication
+app.UseUserSync();
+
 app.UseAuthorization();
 
 app.MapControllers();

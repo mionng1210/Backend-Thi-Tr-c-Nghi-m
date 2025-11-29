@@ -1,20 +1,105 @@
-# Keys and secrets (do not commit)
-API_ThiTracNghiem/API_ThiTracNghiem/wwwroot/keys/*.json
-API_ThiTracNghiem/wwwroot/keys/*.json
-**/wwwroot/keys/*.json
+# ============================================
+# CRITICAL: Files containing secrets and sensitive data
+# ============================================
+
+# AppSettings files - CONTAIN SENSITIVE DATA (API keys, passwords, connection strings)
+# These files contain:
+# - Database connection strings
+# - JWT secret keys
+# - SMTP credentials (email/password)
+# - Cloudinary API keys and secrets
+# - PayOS API keys and checksum keys
+# - Supabase keys (AnonKey, ServiceKey)
+# - Gemini API keys
+**/appsettings.json
+!**/appsettings.Development.json
+!**/appsettings.Example.json
+!**/appsettings.Template.json
 
 # User secrets / environment configs
 **/appsettings.*.local.json
 **/appsettings.Local.json
+**/appsettings.Production.json
+**/appsettings.Staging.json
 
+# Keys and secrets (do not commit)
+API_ThiTracNghiem/API_ThiTracNghiem/wwwroot/keys/*.json
+API_ThiTracNghiem/wwwroot/keys/*.json
+**/wwwroot/keys/*.json
+**/ServiceAccountKey.json
+**/*ServiceAccount*.json
+**/*secret*.json
+**/*key*.json
+**/*credential*.json
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# ============================================
 # Build outputs
+# ============================================
 **/bin/
 **/obj/
+**/bin_temp/
+**/publish/
+**/out/
 
-# Rider/VS Code/VS
+# ============================================
+# IDE and Editor files
+# ============================================
 .idea/
 .vscode/
 *.user
 *.suo
 *.sln.docstates
+*.slnLaunch.user
+*.csproj.user
+*.userosettings
+*.sublime-project
+*.sublime-workspace
+
+# ============================================
+# Logs and temporary files
+# ============================================
+*.log
+*.logs
+logs/
+**/logs/
+*.tmp
+*.temp
+*.cache
+
+# ============================================
+# OS files
+# ============================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================
+# Test results and coverage
+# ============================================
+TestResults/
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+coverage/
+
+# ============================================
+# NuGet packages (if not using package restore)
+# ============================================
+# Uncomment if you don't want to commit packages
+# packages/
+# **/packages/
+
+# ============================================
+# Uploaded files and user content
+# ============================================
+# Uncomment if uploads should not be committed
+# **/wwwroot/uploads/
+# **/uploads/
 

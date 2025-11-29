@@ -16,5 +16,11 @@ namespace API_ThiTracNghiem.Contracts
         Task<ExamQuestion> AddQuestionToExamAsync(ExamQuestion examQuestion);
         Task<bool> RemoveQuestionFromExamAsync(int examId, int questionId);
         Task<bool> IsTeacherOwnerOfExamAsync(int examId, int teacherId);
+        Task<List<Question>> GetRandomQuestionsByDifficultyAsync(int examId, string difficulty, int count);
+        Task<List<ExamQuestion>> GetExamQuestionsByVariantAsync(int examId, string variantCode);
+        Task<ExamAttempt> CreateExamAttemptAsync(ExamAttempt examAttempt);
+        Task<ExamAttempt?> GetActiveExamAttemptAsync(int examId, int userId);
+        Task<List<ExamAttempt>> GetUserExamAttemptsAsync(int examId, int userId);
+        Task<List<AnswerOption>> GetAnswerOptionsForQuestionAsync(int questionId);
     }
 }

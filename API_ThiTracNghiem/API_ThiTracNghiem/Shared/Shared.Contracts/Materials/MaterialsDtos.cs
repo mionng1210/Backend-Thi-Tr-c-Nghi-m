@@ -11,6 +11,7 @@ public class MaterialListItemDto
     public bool IsPaid { get; set; }
     public decimal? Price { get; set; }
     public string? ExternalLink { get; set; }
+    public string? FileUrl { get; set; } // URL của file đã upload
     public int? DurationSeconds { get; set; }
     public int CourseId { get; set; }
     public int? OrderIndex { get; set; }

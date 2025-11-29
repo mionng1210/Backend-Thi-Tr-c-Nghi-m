@@ -55,7 +55,7 @@ namespace ExamsService.Migrations
 
                     b.HasIndex("QuestionId");
 
-                    b.ToTable("AnswerOptions", (string)null);
+                    b.ToTable("AnswerOptions");
                 });
 
             modelBuilder.Entity("ExamsService.Models.Course", b =>
@@ -116,7 +116,7 @@ namespace ExamsService.Migrations
 
                     b.HasIndex("TeacherId");
 
-                    b.ToTable("Courses", (string)null);
+                    b.ToTable("Courses");
                 });
 
             modelBuilder.Entity("ExamsService.Models.Exam", b =>
@@ -145,6 +145,10 @@ namespace ExamsService.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<string>("Difficulty")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<int?>("DurationMinutes")
                         .HasColumnType("int");
 
@@ -155,11 +159,33 @@ namespace ExamsService.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<string>("FeaturesJson")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<bool>("HasDelete")
                         .HasColumnType("bit");
 
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Level")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<decimal?>("OriginalPrice")
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<decimal?>("PassingMark")
                         .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("Price")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<bool>("RandomizeQuestions")
                         .HasColumnType("bit");
@@ -170,6 +196,9 @@ namespace ExamsService.Migrations
                     b.Property<string>("Status")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("SubjectId")
+                        .HasColumnType("int");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -182,13 +211,115 @@ namespace ExamsService.Migrations
                     b.Property<int?>("TotalQuestions")
                         .HasColumnType("int");
 
+                    b.Property<string>("ValidPeriod")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.HasKey("ExamId");
 
                     b.HasIndex("CourseId");
 
                     b.HasIndex("CreatedBy");
 
-                    b.ToTable("Exams", (string)null);
+                    b.HasIndex("SubjectId");
+
+                    b.ToTable("Exams");
+                });
+
+            modelBuilder.Entity("ExamsService.Models.ExamAttempt", b =>
+                {
+                    b.Property<int>("ExamAttemptId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ExamAttemptId"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<DateTime?>("EndTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ExamId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("HasDelete")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsSubmitted")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal?>("MaxScore")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("Score")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("StartTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("TimeSpentMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("VariantCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("ExamAttemptId");
+
+                    b.HasIndex("ExamId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ExamAttempts");
+                });
+
+            modelBuilder.Entity("ExamsService.Models.ExamEnrollment", b =>
+                {
+                    b.Property<int>("EnrollmentId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("EnrollmentId"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<int>("ExamId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("HasDelete")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("EnrollmentId");
+
+                    b.HasIndex("ExamId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ExamEnrollments");
                 });
 
             modelBuilder.Entity("ExamsService.Models.ExamQuestion", b =>
@@ -225,7 +356,62 @@ namespace ExamsService.Migrations
 
                     b.HasIndex("QuestionId");
 
-                    b.ToTable("ExamQuestions", (string)null);
+                    b.ToTable("ExamQuestions");
+                });
+
+            modelBuilder.Entity("ExamsService.Models.PaymentTransaction", b =>
+                {
+                    b.Property<int>("TransactionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("TransactionId"));
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Gateway")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("GatewayTransactionId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("OrderId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("PaidAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Payload")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("QrCodeData")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("TransactionId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("PaymentTransactions");
                 });
 
             modelBuilder.Entity("ExamsService.Models.Question", b =>
@@ -274,7 +460,7 @@ namespace ExamsService.Migrations
 
                     b.HasIndex("CreatedBy");
 
-                    b.ToTable("Questions", (string)null);
+                    b.ToTable("Questions");
                 });
 
             modelBuilder.Entity("ExamsService.Models.QuestionBank", b =>
@@ -314,7 +500,7 @@ namespace ExamsService.Migrations
 
                     b.HasIndex("SubjectId");
 
-                    b.ToTable("QuestionBanks", (string)null);
+                    b.ToTable("QuestionBanks");
                 });
 
             modelBuilder.Entity("ExamsService.Models.Role", b =>
@@ -344,7 +530,7 @@ namespace ExamsService.Migrations
 
                     b.HasKey("RoleId");
 
-                    b.ToTable("Roles", (string)null);
+                    b.ToTable("Roles");
                 });
 
             modelBuilder.Entity("ExamsService.Models.Subject", b =>
@@ -371,7 +557,76 @@ namespace ExamsService.Migrations
 
                     b.HasKey("SubjectId");
 
-                    b.ToTable("Subjects", (string)null);
+                    b.ToTable("Subjects");
+                });
+
+            modelBuilder.Entity("ExamsService.Models.SubmittedAnswer", b =>
+                {
+                    b.Property<int>("SubmittedAnswerId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("SubmittedAnswerId"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<decimal>("EarnedMarks")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("ExamAttemptId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("HasDelete")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsCorrect")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("QuestionId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TextAnswer")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.HasKey("SubmittedAnswerId");
+
+                    b.HasIndex("ExamAttemptId");
+
+                    b.HasIndex("QuestionId");
+
+                    b.ToTable("SubmittedAnswers");
+                });
+
+            modelBuilder.Entity("ExamsService.Models.SubmittedAnswerOption", b =>
+                {
+                    b.Property<int>("SubmittedAnswerOptionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("SubmittedAnswerOptionId"));
+
+                    b.Property<int>("AnswerOptionId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<int>("SubmittedAnswerId")
+                        .HasColumnType("int");
+
+                    b.HasKey("SubmittedAnswerOptionId");
+
+                    b.HasIndex("AnswerOptionId");
+
+                    b.HasIndex("SubmittedAnswerId");
+
+                    b.ToTable("SubmittedAnswerOptions");
                 });
 
             modelBuilder.Entity("ExamsService.Models.User", b =>
@@ -435,13 +690,13 @@ namespace ExamsService.Migrations
 
                     b.HasIndex("RoleId");
 
-                    b.ToTable("Users", (string)null);
+                    b.ToTable("Users");
                 });
 
             modelBuilder.Entity("ExamsService.Models.AnswerOption", b =>
                 {
                     b.HasOne("ExamsService.Models.Question", "Question")
-                        .WithMany()
+                        .WithMany("AnswerOptions")
                         .HasForeignKey("QuestionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -478,9 +733,53 @@ namespace ExamsService.Migrations
                         .HasForeignKey("CreatedBy")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("ExamsService.Models.Subject", "Subject")
+                        .WithMany()
+                        .HasForeignKey("SubjectId");
+
                     b.Navigation("Course");
 
                     b.Navigation("Creator");
+
+                    b.Navigation("Subject");
+                });
+
+            modelBuilder.Entity("ExamsService.Models.ExamAttempt", b =>
+                {
+                    b.HasOne("ExamsService.Models.Exam", "Exam")
+                        .WithMany()
+                        .HasForeignKey("ExamId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ExamsService.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Exam");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ExamsService.Models.ExamEnrollment", b =>
+                {
+                    b.HasOne("ExamsService.Models.Exam", "Exam")
+                        .WithMany()
+                        .HasForeignKey("ExamId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ExamsService.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Exam");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("ExamsService.Models.ExamQuestion", b =>
@@ -500,6 +799,17 @@ namespace ExamsService.Migrations
                     b.Navigation("Exam");
 
                     b.Navigation("Question");
+                });
+
+            modelBuilder.Entity("ExamsService.Models.PaymentTransaction", b =>
+                {
+                    b.HasOne("ExamsService.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("ExamsService.Models.Question", b =>
@@ -537,6 +847,44 @@ namespace ExamsService.Migrations
                     b.Navigation("Subject");
                 });
 
+            modelBuilder.Entity("ExamsService.Models.SubmittedAnswer", b =>
+                {
+                    b.HasOne("ExamsService.Models.ExamAttempt", "ExamAttempt")
+                        .WithMany()
+                        .HasForeignKey("ExamAttemptId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ExamsService.Models.Question", "Question")
+                        .WithMany()
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ExamAttempt");
+
+                    b.Navigation("Question");
+                });
+
+            modelBuilder.Entity("ExamsService.Models.SubmittedAnswerOption", b =>
+                {
+                    b.HasOne("ExamsService.Models.AnswerOption", "AnswerOption")
+                        .WithMany()
+                        .HasForeignKey("AnswerOptionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ExamsService.Models.SubmittedAnswer", "SubmittedAnswer")
+                        .WithMany()
+                        .HasForeignKey("SubmittedAnswerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AnswerOption");
+
+                    b.Navigation("SubmittedAnswer");
+                });
+
             modelBuilder.Entity("ExamsService.Models.User", b =>
                 {
                     b.HasOne("ExamsService.Models.Role", "Role")
@@ -545,6 +893,11 @@ namespace ExamsService.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Role");
+                });
+
+            modelBuilder.Entity("ExamsService.Models.Question", b =>
+                {
+                    b.Navigation("AnswerOptions");
                 });
 #pragma warning restore 612, 618
         }

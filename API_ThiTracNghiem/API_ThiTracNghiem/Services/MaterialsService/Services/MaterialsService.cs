@@ -10,13 +10,14 @@ namespace MaterialsService.Services;
 public interface IMaterialsService
 {
     Task<object> GetAsync(int pageIndex, int pageSize);
+    Task<object> SearchAsync(string search, int pageIndex, int pageSize);
     Task<MaterialListItemDto?> GetByIdAsync(int id);
     Task<List<UploadedFileDto>> CreateManyAsync(int courseId, string? title, string? description, bool isPaid, decimal? price, int? orderIndex, IFormFileCollection files);
     Task<MaterialListItemDto?> UpdateAsync(int id, int? courseId, string? title, string? description, bool? isPaid, decimal? price, int? orderIndex, IFormFile? file);
     Task<bool> DeleteAsync(int id);
 }
 
-public class MaterialsService : IMaterialsService
+    public class MaterialsService : IMaterialsService
 {
     private readonly MaterialsDbContext _db;
     private readonly ICloudStorage _cloud;
@@ -48,6 +49,53 @@ public class MaterialsService : IMaterialsService
                 IsPaid = m.IsPaid,
                 Price = m.Price,
                 ExternalLink = m.ExternalLink,
+                FileUrl = m.FileUrl,
+                DurationSeconds = m.DurationSeconds,
+                CourseId = m.CourseId,
+                OrderIndex = m.OrderIndex,
+                CreatedAt = m.CreatedAt,
+                UpdatedAt = m.UpdatedAt
+            }).ToListAsync();
+
+        return new
+        {
+            pageIndex = pageIndex,
+            pageSize = pageSize,
+            totalItems = totalItems,
+            totalPages = (int)Math.Ceiling((double)totalItems / pageSize),
+            items = items
+        };
+    }
+
+    public async Task<object> SearchAsync(string search, int pageIndex, int pageSize)
+    {
+        if (pageIndex <= 0) pageIndex = 1;
+        if (pageSize <= 0) pageSize = 10;
+        search = search?.Trim() ?? string.Empty;
+
+        var query = _db.Materials
+            .Where(m => !m.HasDelete &&
+                        (
+                            (!string.IsNullOrEmpty(m.Title) && EF.Functions.Like(m.Title, "%" + search + "%")) ||
+                            (!string.IsNullOrEmpty(m.Description) && EF.Functions.Like(m.Description, "%" + search + "%"))
+                        ))
+            .OrderBy(m => m.OrderIndex);
+
+        var totalItems = await query.CountAsync();
+
+        var items = await query
+            .Skip((pageIndex - 1) * pageSize)
+            .Take(pageSize)
+            .Select(m => new MaterialListItemDto
+            {
+                Id = m.MaterialId,
+                Title = m.Title,
+                Description = m.Description,
+                MediaType = m.MediaType,
+                IsPaid = m.IsPaid,
+                Price = m.Price,
+                ExternalLink = m.ExternalLink,
+                FileUrl = m.FileUrl,
                 DurationSeconds = m.DurationSeconds,
                 CourseId = m.CourseId,
                 OrderIndex = m.OrderIndex,
@@ -78,6 +126,7 @@ public class MaterialsService : IMaterialsService
                 IsPaid = m.IsPaid,
                 Price = m.Price,
                 ExternalLink = m.ExternalLink,
+                FileUrl = m.FileUrl,
                 DurationSeconds = m.DurationSeconds,
                 CourseId = m.CourseId,
                 OrderIndex = m.OrderIndex,
@@ -88,39 +137,51 @@ public class MaterialsService : IMaterialsService
 
     public async Task<List<UploadedFileDto>> CreateManyAsync(int courseId, string? title, string? description, bool isPaid, decimal? price, int? orderIndex, IFormFileCollection files)
     {
-        // Tối giản: chỉ lưu meta, bỏ upload thật để biên dịch chạy ngay
         var list = new List<UploadedFileDto>();
         int index = orderIndex ?? 1;
+        
         foreach (var file in files)
         {
-            var safeFileName = SanitizeFileName(file.FileName);
-            var entity = new Material
+            try
             {
-                CourseId = courseId,
-                Title = title ?? safeFileName,
-                Description = description,
-                IsPaid = isPaid,
-                Price = price,
-                MediaType = file.ContentType,
-                OrderIndex = index++
-            };
-            // Upload to proper storage
-            string url;
-            if ((file.ContentType?.StartsWith("video/") ?? false))
-            {
-                url = await _cloud.UploadFileAsync(file, "materials/videos");
-            }
-            else
-            {
-                var path = $"documents/{Guid.NewGuid()}_{safeFileName}";
-                url = await _docs.UploadDocumentAsync(file, path);
-            }
+                var safeFileName = SanitizeFileName(file.FileName);
+                var entity = new Material
+                {
+                    CourseId = courseId,
+                    Title = title ?? safeFileName,
+                    Description = description,
+                    IsPaid = isPaid,
+                    Price = price,
+                    MediaType = file.ContentType,
+                    OrderIndex = index++,
+                    CreatedAt = DateTime.UtcNow
+                };
+                
+                // Upload to proper storage
+                string url;
+                if ((file.ContentType?.StartsWith("video/") ?? false))
+                {
+                    url = await _cloud.UploadFileAsync(file, "materials/videos");
+                }
+                else
+                {
+                    var path = $"documents/{Guid.NewGuid()}_{safeFileName}";
+                    url = await _docs.UploadDocumentAsync(file, path);
+                }
 
-            entity.FileUrl = url;
-            _db.Materials.Add(entity);
-            await _db.SaveChangesAsync();
-            list.Add(new UploadedFileDto { MaterialId = entity.MaterialId, FileName = file.FileName, Url = url });
+                entity.FileUrl = url;
+                _db.Materials.Add(entity);
+                await _db.SaveChangesAsync();
+                list.Add(new UploadedFileDto { MaterialId = entity.MaterialId, FileName = file.FileName, Url = url });
+            }
+            catch (Exception ex)
+            {
+                // Log error for this file and throw with detailed message
+                var innerMsg = ex.InnerException?.Message ?? "";
+                throw new Exception($"Error processing file {file.FileName}: {ex.Message}. Inner: {innerMsg}", ex);
+            }
         }
+        
         return list;
     }
 

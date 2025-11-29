@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 
-namespace AuthService.DTOs
+namespace API_ThiTracNghiem.Services.AuthService.DTOs
 {
     public class GetUserResponse
     {
@@ -127,5 +127,13 @@ namespace AuthService.DTOs
 
             return results;
         }
+    }
+
+    // Admin: Cập nhật vai trò theo tên vai trò
+    public class AdminUpdateUserRoleRequest
+    {
+        [Required]
+        [MaxLength(50, ErrorMessage = "Tên vai trò tối đa 50 ký tự")]
+        public string Role { get; set; } = string.Empty; // Ví dụ: "student", "teacher", "admin"
     }
 }

@@ -1,4 +1,4 @@
-namespace AuthService.Utils
+namespace API_ThiTracNghiem.Services.AuthService.Utils
 {
     public static class EmailTemplates
     {

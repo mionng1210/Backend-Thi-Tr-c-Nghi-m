@@ -2,12 +2,15 @@ using MaterialsService.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Hosting;
 using Shared.Contracts.Materials;
 using MaterialsService.DTOs;
 using MaterialsService.Data;
 using MaterialsService.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using API_ThiTracNghiem.Services;
+using API_ThiTracNghiem.Middleware;
 
 namespace MaterialsService.Controllers;
 
@@ -17,17 +20,32 @@ public class MaterialsController : ControllerBase
 {
     private readonly IMaterialsService _service;
     private readonly MaterialsDbContext _db;
-    public MaterialsController(IMaterialsService service, MaterialsDbContext db)
+    private readonly IUserSyncService _userSyncService;
+    private readonly ILogger<MaterialsController> _logger;
+    private readonly IWebHostEnvironment _env;
+    
+    public MaterialsController(IMaterialsService service, MaterialsDbContext db, IUserSyncService userSyncService, ILogger<MaterialsController> logger, IWebHostEnvironment env)
     {
         _service = service;
         _db = db;
+        _userSyncService = userSyncService;
+        _logger = logger;
+        _env = env;
     }
 
     [HttpGet]
-    public async Task<IActionResult> Get([FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 10)
+    public async Task<IActionResult> Get([FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
     {
-        var data = await _service.GetAsync(pageIndex, pageSize);
-        return Ok(data);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var data = await _service.SearchAsync(search!, pageIndex, pageSize);
+            return Ok(data);
+        }
+        else
+        {
+            var data = await _service.GetAsync(pageIndex, pageSize);
+            return Ok(data);
+        }
     }
 
     [HttpGet("{id}")]
@@ -35,6 +53,62 @@ public class MaterialsController : ControllerBase
     {
         var m = await _service.GetByIdAsync(id);
         return m == null ? NotFound() : Ok(m);
+    }
+
+    /// <summary>
+    /// Lấy danh sách tài liệu theo CourseId
+    /// </summary>
+    [HttpGet("by-course/{courseId}")]
+    public async Task<IActionResult> GetByCourseId(int courseId, [FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 100)
+    {
+        try
+        {
+            if (pageIndex <= 0) pageIndex = 1;
+            if (pageSize <= 0) pageSize = 100;
+            if (pageSize > 1000) pageSize = 1000; // Max page size
+
+            var query = _db.Materials
+                .Where(m => m.CourseId == courseId && !m.HasDelete)
+                .OrderBy(m => m.OrderIndex ?? int.MaxValue)
+                .ThenBy(m => m.CreatedAt);
+
+            var totalItems = await query.CountAsync();
+
+            var items = await query
+                .Skip((pageIndex - 1) * pageSize)
+                .Take(pageSize)
+                .Select(m => new MaterialListItemDto
+                {
+                    Id = m.MaterialId,
+                    Title = m.Title,
+                    Description = m.Description,
+                    MediaType = m.MediaType,
+                    IsPaid = m.IsPaid,
+                    Price = m.Price,
+                    ExternalLink = m.ExternalLink,
+                    FileUrl = m.FileUrl,
+                    DurationSeconds = m.DurationSeconds,
+                    CourseId = m.CourseId,
+                    OrderIndex = m.OrderIndex,
+                    CreatedAt = m.CreatedAt,
+                    UpdatedAt = m.UpdatedAt
+                })
+                .ToListAsync();
+
+            return Ok(new
+            {
+                pageIndex = pageIndex,
+                pageSize = pageSize,
+                totalItems = totalItems,
+                totalPages = (int)Math.Ceiling((double)totalItems / pageSize),
+                items = items
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting materials by courseId {CourseId}", courseId);
+            return StatusCode(500, new { message = "Lỗi hệ thống khi lấy tài liệu", error = ex.Message });
+        }
     }
 
     [HttpPost]
@@ -49,9 +123,40 @@ public class MaterialsController : ControllerBase
         [FromForm] int? orderIndex,
         [FromForm] IFormFileCollection files)
     {
-        if (files == null || files.Count == 0) return BadRequest("Vui lòng chọn tệp");
-        var uploaded = await _service.CreateManyAsync(courseId, title, description, isPaid, price, orderIndex, files);
-        return Ok(uploaded);
+        try
+        {
+            _logger.LogInformation("📤 CreateMany request: courseId={CourseId}, title={Title}, isPaid={IsPaid}, filesCount={FilesCount}", 
+                courseId, title, isPaid, files?.Count ?? 0);
+            
+            if (files == null || files.Count == 0)
+            {
+                _logger.LogWarning("❌ No files provided");
+                return BadRequest(new { message = "Vui lòng chọn tệp" });
+            }
+
+            // Note: MaterialsService doesn't have Courses table, so we skip validation
+            // CourseId validation should be done at the API Gateway or ExamsService level
+            _logger.LogInformation("📝 Creating materials for courseId={CourseId} (validation skipped - MaterialsService doesn't have Courses table)", courseId);
+
+            var uploaded = await _service.CreateManyAsync(courseId, title, description, isPaid, price, orderIndex, files);
+            _logger.LogInformation("✅ Successfully created {Count} materials for course {CourseId}", uploaded.Count, courseId);
+            return Ok(uploaded);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ Error creating materials: {Message}. Inner: {InnerException}", 
+                ex.Message, ex.InnerException?.Message ?? "None");
+            _logger.LogError(ex, "❌ Stack trace: {StackTrace}", ex.StackTrace);
+            
+            // Return detailed error for debugging
+            var errorResponse = new { 
+                message = "Lỗi hệ thống khi tạo tài liệu", 
+                error = ex.Message, 
+                innerException = ex.InnerException?.Message,
+                stackTrace = _env.IsDevelopment() ? ex.StackTrace : null
+            };
+            return StatusCode(500, errorResponse);
+        }
     }
 
     [HttpPut("{id}")]
@@ -172,6 +277,119 @@ public class MaterialsController : ControllerBase
         catch (System.Exception ex)
         {
             return StatusCode(500, $"Lỗi hệ thống khi tạo giao dịch: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Demo User Sync - Lấy thông tin user hiện tại từ middleware
+    /// </summary>
+    [HttpGet("user-sync-demo")]
+    [Authorize]
+    public IActionResult GetUserSyncDemo()
+    {
+        try
+        {
+            // Sử dụng HttpContext Extension từ middleware
+            var syncedUser = HttpContext.GetSyncedUser();
+            var userId = HttpContext.GetSyncedUserId();
+            var userRole = HttpContext.GetSyncedUserRole();
+
+            if (syncedUser == null)
+            {
+                return Unauthorized("User not found or invalid token");
+            }
+
+            _logger.LogInformation($"User {syncedUser.FullName} ({syncedUser.Email}) is accessing materials user sync demo");
+
+            return Ok(new
+            {
+                Message = "Materials User sync demo - Thông tin user được đồng bộ từ AuthService",
+                ServiceName = "MaterialsService (Port 5003)",
+                SyncedUser = syncedUser,
+                Permissions = new
+                {
+                    IsAdmin = HttpContext.IsAdmin(),
+                    IsTeacher = HttpContext.IsTeacher(),
+                    IsStudent = HttpContext.IsStudent()
+                },
+                AccessTime = DateTime.UtcNow
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in materials user sync demo");
+            return StatusCode(500, $"Lỗi hệ thống: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Demo User Sync - Kiểm tra quyền truy cập tài liệu theo role
+    /// </summary>
+    [HttpGet("access-check-demo/{materialId}")]
+    [Authorize]
+    public async Task<IActionResult> GetMaterialAccessDemo(int materialId)
+    {
+        try
+        {
+            var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+            if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+            {
+                return Unauthorized("Missing or invalid authorization header");
+            }
+
+            var token = authHeader.Substring("Bearer ".Length).Trim();
+            var user = await _userSyncService.GetUserFromTokenAsync(token);
+
+            if (user == null)
+            {
+                return Unauthorized("Invalid token or user not found");
+            }
+
+            // Kiểm tra quyền truy cập tài liệu
+            var material = await _db.Materials.FindAsync(materialId);
+            if (material == null)
+            {
+                return NotFound($"Material with ID {materialId} not found");
+            }
+
+            // Logic kiểm tra quyền truy cập
+            bool hasAccess = user.RoleName?.ToLower() switch
+            {
+                "admin" => true, // Admin có thể truy cập tất cả
+                "teacher" => true, // Teacher có thể truy cập tất cả tài liệu
+                "student" => !material.IsPaid || material.Price == 0, // Student chỉ truy cập tài liệu miễn phí
+                _ => false
+            };
+
+            _logger.LogInformation($"Material access check for user {user.FullName}: Material={materialId}, Access={hasAccess}");
+
+            return Ok(new
+            {
+                Message = "Material access check demo - Kiểm tra quyền truy cập từ AuthService",
+                ServiceName = "MaterialsService (Port 5003)",
+                User = user,
+                Material = new
+                {
+                    material.MaterialId,
+                    material.Title,
+                    material.IsPaid,
+                    material.Price,
+                    material.MediaType
+                },
+                AccessResult = new
+                {
+                    HasAccess = hasAccess,
+                    Reason = hasAccess ? "Access granted" : 
+                            user.RoleName?.ToLower() == "student" ? "Students can only access free materials" : 
+                            "Access denied"
+                },
+                CheckTime = DateTime.UtcNow
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in material access check demo");
+            return StatusCode(500, $"Lỗi hệ thống: {ex.Message}");
         }
     }
 }

@@ -3,6 +3,14 @@ using ExamsService.DTOs;
 
 namespace ExamsService.Models
 {
+    public class CreateAnswerOptionRequest
+    {
+        [Required(ErrorMessage = "Nội dung đáp án là bắt buộc")]
+        public string Content { get; set; } = string.Empty;
+        public bool IsCorrect { get; set; }
+        public int? OrderIndex { get; set; }
+    }
+
     public class CreateQuestionBankRequest
     {
         [Required(ErrorMessage = "Nội dung câu hỏi là bắt buộc")]
@@ -19,6 +27,9 @@ namespace ExamsService.Models
 
         public string? Tags { get; set; }
 
+        [Required(ErrorMessage = "Môn học là bắt buộc")]
+        public int SubjectId { get; set; }
+
         [Required(ErrorMessage = "Danh sách đáp án là bắt buộc")]
         public List<CreateAnswerOptionRequest> AnswerOptions { get; set; } = new();
     }
@@ -31,6 +42,8 @@ namespace ExamsService.Models
         public string? Difficulty { get; set; }
         public decimal? Marks { get; set; }
         public string? Tags { get; set; }
+        public int? SubjectId { get; set; }
+        public string? SubjectName { get; set; }
         public DateTime CreatedAt { get; set; }
         public List<AnswerOptionResponse> AnswerOptions { get; set; } = new();
     }
@@ -49,6 +62,7 @@ namespace ExamsService.Models
         public string? Difficulty { get; set; }
         public string? Tags { get; set; }
         public string? SearchContent { get; set; }
+        public int? SubjectId { get; set; }
         public int Page { get; set; } = 1;
         public int PageSize { get; set; } = 10;
     }
@@ -86,8 +100,36 @@ namespace ExamsService.Models
         [StringLength(500, ErrorMessage = "Tags không được vượt quá 500 ký tự")]
         public string? Tags { get; set; }
 
+        [Required(ErrorMessage = "Môn học là bắt buộc")]
+        public int SubjectId { get; set; }
+
         [Required(ErrorMessage = "Danh sách đáp án là bắt buộc")]
         [MinLength(2, ErrorMessage = "Phải có ít nhất 2 đáp án")]
+        public List<CreateAnswerOptionRequest> AnswerOptions { get; set; } = new();
+    }
+
+    public class GenerateAIQuestionRequest
+    {
+        [Required]
+        public string Description { get; set; } = string.Empty;
+        [Required]
+        public int SubjectId { get; set; }
+        public string? QuestionType { get; set; }
+        public string? Difficulty { get; set; }
+        public decimal? Marks { get; set; }
+        public int? OptionsCount { get; set; }
+        public int? CorrectCount { get; set; }
+        public string? Tags { get; set; }
+    }
+
+    public class GeneratedAIQuestionResponse
+    {
+        public string Content { get; set; } = string.Empty;
+        public string QuestionType { get; set; } = string.Empty;
+        public string Difficulty { get; set; } = string.Empty;
+        public decimal Marks { get; set; }
+        public string? Tags { get; set; }
+        public int SubjectId { get; set; }
         public List<CreateAnswerOptionRequest> AnswerOptions { get; set; } = new();
     }
 
@@ -102,5 +144,7 @@ namespace ExamsService.Models
 
         [Range(0.1, 100, ErrorMessage = "Điểm số mặc định phải từ 0.1 đến 100")]
         public decimal? DefaultMarks { get; set; }
+
+        public int? SubjectId { get; set; }
     }
 }

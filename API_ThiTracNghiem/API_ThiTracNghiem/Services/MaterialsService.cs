@@ -153,6 +153,7 @@ namespace API_ThiTracNghiem.Services
                 IsPaid = entity.IsPaid,
                 Price = entity.Price,
                 ExternalLink = entity.ExternalLink,
+                FileUrl = entity.FileUrl,
                 DurationSeconds = entity.DurationSeconds,
                 CourseId = entity.CourseId,
                 OrderIndex = entity.OrderIndex,

@@ -18,6 +18,15 @@ namespace ExamsService.Data
         public DbSet<User> Users { get; set; }
         public DbSet<Role> Roles { get; set; }
         public DbSet<Subject> Subjects { get; set; }
+        public DbSet<ExamAttempt> ExamAttempts { get; set; }
+        public DbSet<SubmittedAnswer> SubmittedAnswers { get; set; }
+        public DbSet<SubmittedAnswerOption> SubmittedAnswerOptions { get; set; }
+        public DbSet<PaymentTransaction> PaymentTransactions { get; set; }
+        public DbSet<ExamEnrollment> ExamEnrollments { get; set; }
+        public DbSet<Enrollment> Enrollments { get; set; }
+        public DbSet<Lesson> Lessons { get; set; }
+        public DbSet<LessonQuestion> LessonQuestions { get; set; }
+        public DbSet<Feedback> Feedbacks { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -59,6 +68,23 @@ namespace ExamsService.Data
                 entity.HasOne(eq => eq.Question)
                     .WithMany()
                     .HasForeignKey(eq => eq.QuestionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure LessonQuestion entity
+            modelBuilder.Entity<LessonQuestion>(entity =>
+            {
+                entity.HasKey(lq => lq.LessonQuestionId);
+                entity.Property(lq => lq.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                
+                entity.HasOne(lq => lq.Lesson)
+                    .WithMany()
+                    .HasForeignKey(lq => lq.LessonId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                    
+                entity.HasOne(lq => lq.Question)
+                    .WithMany()
+                    .HasForeignKey(lq => lq.QuestionId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
@@ -109,7 +135,7 @@ namespace ExamsService.Data
                 entity.Property(ao => ao.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
                 
                 entity.HasOne(ao => ao.Question)
-                    .WithMany()
+                    .WithMany(q => q.AnswerOptions)
                     .HasForeignKey(ao => ao.QuestionId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
@@ -171,6 +197,158 @@ namespace ExamsService.Data
                 entity.Property(s => s.Name).IsRequired().HasMaxLength(200);
                 entity.Property(s => s.Description).HasMaxLength(1000);
                 entity.Property(s => s.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            });
+
+            // Configure ExamAttempt entity
+            modelBuilder.Entity<ExamAttempt>(entity =>
+            {
+                entity.HasKey(ea => ea.ExamAttemptId);
+                entity.Property(ea => ea.VariantCode).HasMaxLength(50);
+                entity.Property(ea => ea.Status).IsRequired().HasMaxLength(50);
+                entity.Property(ea => ea.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                
+                entity.HasOne(ea => ea.Exam)
+                    .WithMany()
+                    .HasForeignKey(ea => ea.ExamId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                    
+                entity.HasOne(ea => ea.User)
+                    .WithMany()
+                    .HasForeignKey(ea => ea.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure SubmittedAnswer entity
+            modelBuilder.Entity<SubmittedAnswer>(entity =>
+            {
+                entity.HasKey(sa => sa.SubmittedAnswerId);
+                entity.Property(sa => sa.TextAnswer).HasMaxLength(4000);
+                entity.Property(sa => sa.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                
+                entity.HasOne(sa => sa.ExamAttempt)
+                    .WithMany()
+                    .HasForeignKey(sa => sa.ExamAttemptId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                    
+                entity.HasOne(sa => sa.Question)
+                    .WithMany()
+                    .HasForeignKey(sa => sa.QuestionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure SubmittedAnswerOption entity
+            modelBuilder.Entity<SubmittedAnswerOption>(entity =>
+            {
+                entity.HasKey(sao => sao.SubmittedAnswerOptionId);
+                entity.Property(sao => sao.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                
+                entity.HasOne(sao => sao.SubmittedAnswer)
+                    .WithMany()
+                    .HasForeignKey(sao => sao.SubmittedAnswerId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                    
+                entity.HasOne(sao => sao.AnswerOption)
+                    .WithMany()
+                    .HasForeignKey(sao => sao.AnswerOptionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure PaymentTransaction entity
+            modelBuilder.Entity<PaymentTransaction>(entity =>
+            {
+                entity.HasKey(pt => pt.TransactionId);
+                entity.Property(pt => pt.OrderId).HasMaxLength(100);
+                entity.Property(pt => pt.Currency).HasMaxLength(10);
+                entity.Property(pt => pt.Gateway).HasMaxLength(50);
+                entity.Property(pt => pt.GatewayTransactionId).HasMaxLength(100);
+                entity.Property(pt => pt.Status).HasMaxLength(50);
+                entity.Property(pt => pt.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(pt => pt.User)
+                    .WithMany()
+                    .HasForeignKey(pt => pt.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure ExamEnrollment entity
+            modelBuilder.Entity<ExamEnrollment>(entity =>
+            {
+                entity.HasKey(ee => ee.EnrollmentId);
+                entity.Property(ee => ee.Status).HasMaxLength(50);
+                entity.Property(ee => ee.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(ee => ee.Exam)
+                    .WithMany()
+                    .HasForeignKey(ee => ee.ExamId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(ee => ee.User)
+                    .WithMany()
+                    .HasForeignKey(ee => ee.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure Enrollment entity
+            modelBuilder.Entity<Enrollment>(entity =>
+            {
+                entity.HasKey(e => e.EnrollmentId);
+                entity.Property(e => e.Status).HasMaxLength(50);
+                entity.Property(e => e.PaymentTransactionId).HasMaxLength(100);
+                entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(e => e.Course)
+                    .WithMany()
+                    .HasForeignKey(e => e.CourseId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure Lesson entity
+            modelBuilder.Entity<Lesson>(entity =>
+            {
+                entity.HasKey(l => l.LessonId);
+                entity.Property(l => l.Title).IsRequired().HasMaxLength(200);
+                entity.Property(l => l.Description).HasMaxLength(2000);
+                entity.Property(l => l.Content).HasColumnType("nvarchar(MAX)"); // Nội dung bài học có thể dài
+                entity.Property(l => l.Type).HasMaxLength(50);
+                entity.Property(l => l.VideoUrl).HasMaxLength(500);
+                entity.Property(l => l.ContentUrl).HasMaxLength(500);
+                entity.Property(l => l.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(l => l.Course)
+                    .WithMany()
+                    .HasForeignKey(l => l.CourseId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure Feedback entity
+            modelBuilder.Entity<Feedback>(entity =>
+            {
+                entity.HasKey(f => f.FeedbackId);
+                entity.ToTable("Feedbacks");
+                entity.Property(f => f.Rating).IsRequired(false);
+                entity.Property(f => f.Comment).HasMaxLength(1000);
+                entity.Property(f => f.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(f => f.HasDelete).HasDefaultValue(false);
+                
+                entity.HasOne(f => f.User)
+                    .WithMany()
+                    .HasForeignKey(f => f.UserId)
+                    .OnDelete(DeleteBehavior.SetNull);
+                    
+                entity.HasOne(f => f.Course)
+                    .WithMany()
+                    .HasForeignKey(f => f.CourseId)
+                    .OnDelete(DeleteBehavior.SetNull);
+                    
+                entity.HasOne(f => f.Exam)
+                    .WithMany()
+                    .HasForeignKey(f => f.ExamId)
+                    .OnDelete(DeleteBehavior.SetNull);
             });
         }
     }

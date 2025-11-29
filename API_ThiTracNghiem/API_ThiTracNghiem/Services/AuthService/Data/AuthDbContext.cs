@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using AuthService.Models;
+using API_ThiTracNghiem.Services.AuthService.Models;
 
-namespace AuthService.Data;
+namespace API_ThiTracNghiem.Services.AuthService.Data;
 
 public class AuthDbContext : DbContext
 {
@@ -13,6 +13,7 @@ public class AuthDbContext : DbContext
     public DbSet<Role> Roles { get; set; } = null!;
     public DbSet<AuthSession> AuthSessions { get; set; } = null!;
     public DbSet<OTP> OTPs { get; set; } = null!;
+    public DbSet<PermissionRequest> PermissionRequests { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -76,6 +77,33 @@ public class AuthDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
             
             // Foreign key relationship
+            entity.HasOne(e => e.User)
+                  .WithMany()
+                  .HasForeignKey(e => e.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // PermissionRequest entity configuration
+        modelBuilder.Entity<PermissionRequest>(entity =>
+        {
+            entity.HasKey(e => e.PermissionRequestId);
+            entity.Property(e => e.PermissionRequestId).ValueGeneratedOnAdd();
+            entity.Property(e => e.Status).HasMaxLength(30);
+            entity.Property(e => e.RejectReason).HasMaxLength(1000);
+            entity.Property(e => e.SubmittedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            // Bank info
+            entity.Property(e => e.BankName).HasMaxLength(200);
+            entity.Property(e => e.BankAccountName).HasMaxLength(150);
+            entity.Property(e => e.BankAccountNumber).HasMaxLength(50);
+
+            // Payment info
+            entity.Property(e => e.PaymentMethod).HasMaxLength(50);
+            entity.Property(e => e.PaymentReference).HasMaxLength(100);
+            entity.Property(e => e.PaymentStatus).HasMaxLength(30);
+            entity.Property(e => e.PaymentAmount).HasColumnType("decimal(18,2)");
+
             entity.HasOne(e => e.User)
                   .WithMany()
                   .HasForeignKey(e => e.UserId)
