@@ -104,6 +104,10 @@ public class AuthDbContext : DbContext
             entity.Property(e => e.PaymentStatus).HasMaxLength(30);
             entity.Property(e => e.PaymentAmount).HasColumnType("decimal(18,2)");
 
+            // Evidence and reason
+            entity.Property(e => e.EvidenceImageUrl).HasMaxLength(500);
+            entity.Property(e => e.Reason).HasMaxLength(2000);
+
             entity.HasOne(e => e.User)
                   .WithMany()
                   .HasForeignKey(e => e.UserId)

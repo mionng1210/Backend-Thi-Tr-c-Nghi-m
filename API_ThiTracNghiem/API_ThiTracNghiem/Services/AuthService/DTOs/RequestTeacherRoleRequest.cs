@@ -42,6 +42,13 @@ public class RequestTeacherRoleRequest : IValidatableObject
 
     public decimal? PaymentAmount { get; set; }
 
+    // Thông tin minh chứng và lý do
+    [MaxLength(500)]
+    public string? EvidenceImageUrl { get; set; }
+
+    [MaxLength(2000)]
+    public string? Reason { get; set; }
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         // Nếu có PaymentMethod mà không có PaymentStatus, set mặc định pending

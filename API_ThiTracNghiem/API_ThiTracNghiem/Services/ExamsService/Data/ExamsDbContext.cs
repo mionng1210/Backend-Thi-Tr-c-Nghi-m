@@ -27,6 +27,9 @@ namespace ExamsService.Data
         public DbSet<Lesson> Lessons { get; set; }
         public DbSet<LessonQuestion> LessonQuestions { get; set; }
         public DbSet<Feedback> Feedbacks { get; set; }
+        // ✅ NEW: Exam Variants
+        public DbSet<ExamVariant> ExamVariants { get; set; }
+        public DbSet<ExamVariantQuestion> ExamVariantQuestions { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -68,6 +71,41 @@ namespace ExamsService.Data
                 entity.HasOne(eq => eq.Question)
                     .WithMany()
                     .HasForeignKey(eq => eq.QuestionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // ✅ NEW: Configure ExamVariant entity
+            modelBuilder.Entity<ExamVariant>(entity =>
+            {
+                entity.HasKey(ev => ev.VariantId);
+                entity.Property(ev => ev.VariantCode).IsRequired().HasMaxLength(50);
+                entity.Property(ev => ev.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                
+                entity.HasOne(ev => ev.Exam)
+                    .WithMany()
+                    .HasForeignKey(ev => ev.ExamId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                
+                // Unique constraint: Mỗi bài thi chỉ có 1 mã đề với cùng VariantCode
+                entity.HasIndex(ev => new { ev.ExamId, ev.VariantCode })
+                    .IsUnique()
+                    .HasFilter("[HasDelete] = 0");
+            });
+
+            // ✅ NEW: Configure ExamVariantQuestion entity
+            modelBuilder.Entity<ExamVariantQuestion>(entity =>
+            {
+                entity.HasKey(evq => evq.VariantQuestionId);
+                entity.Property(evq => evq.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                
+                entity.HasOne(evq => evq.Variant)
+                    .WithMany(v => v.Questions)
+                    .HasForeignKey(evq => evq.VariantId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                    
+                entity.HasOne(evq => evq.Question)
+                    .WithMany()
+                    .HasForeignKey(evq => evq.QuestionId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
 

@@ -1,5 +1,6 @@
 using ChatService.Services;
 using API_ThiTracNghiem.Shared.Contracts;
+using Microsoft.EntityFrameworkCore;
 
 namespace ChatService.Middleware
 {
@@ -45,15 +46,22 @@ namespace ChatService.Middleware
                                 UserId = user.UserId,
                                 Email = user.Email ?? "",
                                 FullName = user.FullName ?? "",
-                                RoleId = user.RoleId ?? 3, // Default Student role
+                                RoleId = user.RoleId ?? 3,
                                 Status = user.Status ?? "Active",
                                 IsEmailVerified = user.IsEmailVerified,
                                 CreatedAt = user.CreatedAt,
                                 UpdatedAt = user.UpdatedAt ?? DateTime.UtcNow,
                                 HasDelete = user.HasDelete
                             };
-                            dbContext.Users.Add(newUser);
-                            await dbContext.SaveChangesAsync();
+
+                            using (var tx = await dbContext.Database.BeginTransactionAsync())
+                            {
+                                await dbContext.Database.ExecuteSqlRawAsync("SET IDENTITY_INSERT [dbo].[Users] ON");
+                                dbContext.Users.Add(newUser);
+                                await dbContext.SaveChangesAsync();
+                                await dbContext.Database.ExecuteSqlRawAsync("SET IDENTITY_INSERT [dbo].[Users] OFF");
+                                await tx.CommitAsync();
+                            }
                             
                             _logger.LogInformation($"User {user.UserId} ({user.Email}) synced to database");
                         }

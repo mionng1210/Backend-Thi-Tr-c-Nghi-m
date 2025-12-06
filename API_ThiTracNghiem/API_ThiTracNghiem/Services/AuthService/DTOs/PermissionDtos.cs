@@ -14,6 +14,8 @@ public class PermissionRequestItem
     public DateTime? ReviewedAt { get; set; }
     public int? ReviewedById { get; set; }
     public string? RejectReason { get; set; }
+    public string? EvidenceImageUrl { get; set; }
+    public string? Reason { get; set; }
 }
 
 public class RejectPermissionRequest

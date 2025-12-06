@@ -300,21 +300,36 @@ namespace ChatService.Controllers
                 var existingUser = await _context.Users.FindAsync(creatorId);
                 if (existingUser == null)
                 {
-                    // Tạo user mới trong ChatService database với thông tin cơ bản
+                    var existingByEmail = !string.IsNullOrEmpty(userSyncDto.Email)
+                        ? await _context.Users.FirstOrDefaultAsync(u => u.Email == userSyncDto.Email)
+                        : null;
+                    if (existingByEmail != null && existingByEmail.UserId != userSyncDto.UserId)
+                    {
+                        _context.Users.Remove(existingByEmail);
+                        await _context.SaveChangesAsync();
+                    }
+
                     var newUser = new User
                     {
                         UserId = userSyncDto.UserId,
                         Email = userSyncDto.Email ?? "",
                         FullName = userSyncDto.FullName ?? "",
-                        RoleId = userSyncDto.RoleId ?? 3, // Default Student role
+                        RoleId = userSyncDto.RoleId ?? 3,
                         Status = userSyncDto.Status ?? "Active",
                         IsEmailVerified = userSyncDto.IsEmailVerified,
                         CreatedAt = userSyncDto.CreatedAt,
                         UpdatedAt = userSyncDto.UpdatedAt ?? DateTime.UtcNow,
                         HasDelete = userSyncDto.HasDelete
                     };
-                    _context.Users.Add(newUser);
-                    await _context.SaveChangesAsync();
+
+                    using (var tx = await _context.Database.BeginTransactionAsync())
+                    {
+                        await _context.Database.ExecuteSqlRawAsync("SET IDENTITY_INSERT [dbo].[Users] ON");
+                        _context.Users.Add(newUser);
+                        await _context.SaveChangesAsync();
+                        await _context.Database.ExecuteSqlRawAsync("SET IDENTITY_INSERT [dbo].[Users] OFF");
+                        await tx.CommitAsync();
+                    }
                 }
 
                 // Tạo phòng chat mới
@@ -346,7 +361,7 @@ namespace ChatService.Controllers
                 _context.ChatRoomMembers.Add(membership);
 
                 // ✅ AUTO-ADD ADMIN to Support rooms (from AuthService)
-                if (request.RoomType == "Support")
+                if (string.Equals(request.RoomType, "Support", StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.LogInformation("Support room created, fetching admin users from AuthService...");
                     
@@ -378,8 +393,24 @@ namespace ChatService.Controllers
                                     UpdatedAt = admin.UpdatedAt ?? DateTime.UtcNow,
                                     HasDelete = false
                                 };
-                                _context.Users.Add(newAdmin);
-                                await _context.SaveChangesAsync();
+
+                                using (var txAdmin = await _context.Database.BeginTransactionAsync())
+                                {
+                                    if (!string.IsNullOrEmpty(admin.Email))
+                                    {
+                                        var dup = await _context.Users.FirstOrDefaultAsync(u => u.Email == admin.Email && u.UserId != admin.UserId);
+                                        if (dup != null)
+                                        {
+                                            _context.Users.Remove(dup);
+                                            await _context.SaveChangesAsync();
+                                        }
+                                    }
+                                    await _context.Database.ExecuteSqlRawAsync("SET IDENTITY_INSERT [dbo].[Users] ON");
+                                    _context.Users.Add(newAdmin);
+                                    await _context.SaveChangesAsync();
+                                    await _context.Database.ExecuteSqlRawAsync("SET IDENTITY_INSERT [dbo].[Users] OFF");
+                                    await txAdmin.CommitAsync();
+                                }
                             }
 
                             // Add admin to room
@@ -418,7 +449,7 @@ namespace ChatService.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating room");
-                return StatusCode(500, new { success = false, message = "Đã xảy ra lỗi khi tạo phòng chat" });
+                return StatusCode(500, new { success = false, message = ex.Message, details = ex.InnerException?.Message });
             }
         }
 
@@ -564,6 +595,18 @@ namespace ChatService.Controllers
         public IActionResult Test()
         {
             return Ok(new { success = true, message = "ChatService is working", timestamp = DateTime.UtcNow });
+        }
+
+        [HttpGet("debug/rooms")]
+        [AllowAnonymous]
+        public async Task<IActionResult> DebugRooms()
+        {
+            var rooms = await _context.ChatRooms
+                .AsNoTracking()
+                .OrderByDescending(r => r.CreatedAt)
+                .Select(r => new { r.RoomId, r.Name, r.RoomType, r.CreatedBy, r.CreatedAt, r.IsActive })
+                .ToListAsync();
+            return Ok(new { success = true, data = rooms });
         }
 
         /// <summary>

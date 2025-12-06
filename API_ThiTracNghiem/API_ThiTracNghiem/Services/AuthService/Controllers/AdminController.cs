@@ -766,7 +766,9 @@ public class AdminController : ControllerBase
                 SubmittedAt = r.SubmittedAt,
                 ReviewedAt = r.ReviewedAt,
                 ReviewedById = r.ReviewedById,
-                RejectReason = r.RejectReason
+                RejectReason = r.RejectReason,
+                EvidenceImageUrl = r.EvidenceImageUrl,
+                Reason = r.Reason
             })
             .ToListAsync();
 

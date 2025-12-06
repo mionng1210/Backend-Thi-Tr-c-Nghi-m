@@ -25,6 +25,12 @@ namespace ChatService.Hubs
                 var userIdClaim = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Context.User?.FindFirst("sub")?.Value;
                 if (int.TryParse(userIdClaim, out int userId))
                 {
+                    var user = await _context.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.UserId == userId);
+                    await Groups.AddToGroupAsync(Context.ConnectionId, $"User_{userId}");
+                    if (user?.Role?.RoleName != null && user.Role.RoleName.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await Groups.AddToGroupAsync(Context.ConnectionId, "Admins");
+                    }
                     // Lấy danh sách các room mà user là thành viên
                     var userRooms = await _context.ChatRoomMembers
                         .AsNoTracking()

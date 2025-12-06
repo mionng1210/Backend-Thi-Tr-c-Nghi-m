@@ -121,6 +121,11 @@ namespace API_ThiTracNghiem.Controllers
                 user.FullName = request.FullName;
             }
 
+            if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
+            {
+                user.PhoneNumber = request.PhoneNumber;
+            }
+
             if (!string.IsNullOrWhiteSpace(request.Gender))
             {
                 user.Gender = request.Gender;

@@ -10,6 +10,8 @@ using CloudinaryDotNet;
 using CloudinaryDotNet.Actions;
 using Microsoft.Extensions.Configuration;
 using API_ThiTracNghiem.Services;
+using System.Net.Http;
+using System.Net.Http.Headers;
 
 namespace ExamsService.Controllers
 {
@@ -22,13 +24,15 @@ namespace ExamsService.Controllers
         private readonly IConfiguration _config;
         private readonly Cloudinary _cloudinary;
         private readonly IUserSyncService _userSyncService;
+        private readonly ExamsService.Services.PayOSClient _payOS;
 
-        public CoursesController(ExamsDbContext context, ILogger<CoursesController> logger, IConfiguration config, IUserSyncService userSyncService)
+        public CoursesController(ExamsDbContext context, ILogger<CoursesController> logger, IConfiguration config, IUserSyncService userSyncService, ExamsService.Services.PayOSClient payOS)
         {
             _context = context;
             _logger = logger;
             _config = config;
             _userSyncService = userSyncService;
+            _payOS = payOS;
             
             // Initialize Cloudinary for course thumbnail uploads
             try
@@ -137,7 +141,14 @@ namespace ExamsService.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting courses");
-                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi lấy danh sách khóa học", 500));
+                var safeResponse = new PagedResponse<CourseListItemDto>
+                {
+                    Items = new List<CourseListItemDto>(),
+                    Total = 0,
+                    PageIndex = pageIndex,
+                    PageSize = pageSize
+                };
+                return Ok(ApiResponse.SuccessResponse(safeResponse, "Không thể tải danh sách khóa học, trả về dữ liệu rỗng"));
             }
         }
 
@@ -838,6 +849,30 @@ namespace ExamsService.Controllers
                     status = enrollment.Status,
                     enrolledAt = enrollment.EnrollmentDate
                 }, "Đăng ký khóa học thành công"));
+                try
+                {
+                    var baseUrl = _config["Services:ChatService:BaseUrl"];
+                    if (!string.IsNullOrWhiteSpace(baseUrl))
+                    {
+                        var rawAuth = Request.Headers["Authorization"].ToString().Trim('"');
+                        var token = rawAuth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? rawAuth[7..] : rawAuth;
+                        using var client = new HttpClient { BaseAddress = new Uri(baseUrl) };
+                        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                        var teacherId = course.TeacherId;
+                        if (teacherId.HasValue)
+                        {
+                            var body = new
+                            {
+                                title = "Đăng ký khóa học",
+                                message = $"Người dùng {userId} đã đăng ký khóa học '{(course.Title ?? id.ToString())}'.",
+                                type = "enroll_course"
+                            };
+                            var content = new StringContent(System.Text.Json.JsonSerializer.Serialize(body), System.Text.Encoding.UTF8, "application/json");
+                            await client.PostAsync($"/api/notifications/send-to-user/{teacherId.Value}", content);
+                        }
+                    }
+                }
+                catch { }
             }
             catch (Exception ex)
             {
@@ -1021,6 +1056,56 @@ namespace ExamsService.Controllers
         }
 
         /// <summary>
+        /// Lấy danh sách khóa học đã đăng ký của user hiện tại
+        /// </summary>
+        [HttpGet("my-courses")]
+        [Authorize]
+        public async Task<IActionResult> GetMyCourses()
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
+                {
+                    return Unauthorized(ApiResponse.ErrorResponse("Không tìm thấy thông tin người dùng", 401));
+                }
+
+                var enrollments = await _context.Enrollments
+                    .AsNoTracking()
+                    .Where(e => e.UserId == userId && e.Status != "Cancelled")
+                    .Include(e => e.Course)
+                        .ThenInclude(c => c!.Subject)
+                    .Include(e => e.Course)
+                        .ThenInclude(c => c!.Teacher)
+                    .Select(e => new
+                    {
+                        courseId = e.CourseId,
+                        id = e.CourseId,
+                        title = e.Course != null ? e.Course.Title : "",
+                        subjectName = e.Course != null && e.Course.Subject != null ? e.Course.Subject.Name : null,
+                        description = e.Course != null ? e.Course.Description : null,
+                        thumbnailUrl = e.Course != null ? e.Course.ThumbnailUrl : null,
+                        durationMinutes = e.Course != null ? e.Course.DurationMinutes : null,
+                        price = e.Course != null ? e.Course.Price : null,
+                        isFree = e.Course != null ? e.Course.IsFree : true,
+                        teacherName = e.Course != null && e.Course.Teacher != null ? e.Course.Teacher.FullName : null,
+                        level = e.Course != null ? e.Course.Level : null,
+                        status = e.Status,
+                        progressPercent = e.ProgressPercent ?? 0,
+                        enrollmentDate = e.EnrollmentDate
+                    })
+                    .ToListAsync();
+
+                return Ok(ApiResponse.SuccessResponse(enrollments, "Lấy danh sách khóa học đã đăng ký thành công"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error getting my courses: {Message}", ex.Message);
+                return StatusCode(500, ApiResponse.ErrorResponse($"Lỗi hệ thống: {ex.Message}", 500));
+            }
+        }
+
+        /// <summary>
         /// Lấy danh sách đánh giá của khóa học
         /// </summary>
         [HttpGet("{id}/reviews")]
@@ -1049,6 +1134,296 @@ namespace ExamsService.Controllers
             {
                 _logger.LogError(ex, "❌ Error getting course reviews {CourseId}: {Message}", id, ex.Message);
                 return StatusCode(500, ApiResponse.ErrorResponse($"Lỗi hệ thống: {ex.Message}", 500));
+            }
+        }
+
+        [HttpPost("{courseId}/purchase/payos")]
+        [Authorize]
+        public async Task<IActionResult> PurchaseCoursePayOS(int courseId, [FromBody] System.Text.Json.JsonElement? body)
+        {
+            try
+            {
+                var currentUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(currentUserId) || !int.TryParse(currentUserId, out var uid))
+                {
+                    return Unauthorized(ApiResponse.ErrorResponse("Không thể xác thực người dùng", 401));
+                }
+
+                var course = await _context.Courses.FirstOrDefaultAsync(c => c.CourseId == courseId && !c.HasDelete);
+                if (course == null)
+                {
+                    return NotFound(ApiResponse.ErrorResponse("Khóa học không tồn tại", 404));
+                }
+                if (!(string.Equals(course.Status, "Active", StringComparison.OrdinalIgnoreCase) || string.Equals(course.Status, "Published", StringComparison.OrdinalIgnoreCase)))
+                {
+                    return BadRequest(ApiResponse.ErrorResponse("Khóa học chưa được kích hoạt", 400));
+                }
+                var price = course.Price ?? 0m;
+                var isFree = course.IsFree || price <= 0m;
+                if (isFree)
+                {
+                    return BadRequest(ApiResponse.ErrorResponse("Khóa học này không cần thanh toán", 400));
+                }
+
+                var orderCode = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                string ReadString(string name)
+                {
+                    if (body.HasValue && body.Value.TryGetProperty(name, out var e) && e.ValueKind == System.Text.Json.JsonValueKind.String)
+                        return e.GetString() ?? string.Empty;
+                    return string.Empty;
+                }
+
+                var role = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value ?? string.Empty;
+                var targetUserId = uid;
+                if (string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
+                {
+                    int? buyerUserId = null;
+                    if (body.HasValue && body.Value.TryGetProperty("buyerUserId", out var buid) && buid.ValueKind == System.Text.Json.JsonValueKind.Number)
+                    {
+                        buyerUserId = buid.GetInt32();
+                    }
+                    var buyerEmailInput = ReadString("buyerEmail");
+                    if (buyerUserId.HasValue)
+                    {
+                        var buyer = await _context.Users.FirstOrDefaultAsync(u => u.UserId == buyerUserId.Value && !u.HasDelete);
+                        if (buyer != null) targetUserId = buyer.UserId;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(buyerEmailInput))
+                    {
+                        var buyer = await _context.Users.FirstOrDefaultAsync(u => u.Email != null && u.Email.ToLower() == buyerEmailInput.ToLower() && !u.HasDelete);
+                        if (buyer != null) targetUserId = buyer.UserId;
+                    }
+                }
+
+                var description = ReadString("description");
+                if (string.IsNullOrWhiteSpace(description)) description = $"Thanh toán khóa học {course.Title}";
+                var returnUrl = ReadString("returnUrl");
+                var cancelUrl = ReadString("cancelUrl");
+
+                var amountInt = (int)Math.Round(price);
+                var items = new List<Net.payOS.Types.ItemData>
+                {
+                    new Net.payOS.Types.ItemData(course.Title ?? $"Course {course.CourseId}", 1, amountInt)
+                };
+
+                if (!_payOS.IsConfigured)
+                {
+                    return StatusCode(503, ApiResponse.ErrorResponse("Thiếu cấu hình PayOS (CLIENT_ID/API_KEY/CHECKSUM_KEY)", 503));
+                }
+
+                try
+                {
+                    var create = await _payOS.CreatePaymentLink(orderCode, amountInt, description, returnUrl, cancelUrl, items);
+                    var transaction = new PaymentTransaction
+                    {
+                        OrderId = orderCode.ToString(),
+                        UserId = targetUserId,
+                        Amount = price,
+                        Currency = "VND",
+                        Gateway = "PayOS",
+                        GatewayTransactionId = create.paymentLinkId,
+                        Status = "Pending",
+                        QrCodeData = create.qrCode,
+                        Payload = System.Text.Json.JsonSerializer.Serialize(new
+                        {
+                            courseId = course.CourseId,
+                            bin = create.bin,
+                            accountNumber = create.accountNumber,
+                            amount = create.amount,
+                            description = create.description,
+                            buyerName = ReadString("buyerName"),
+                            buyerEmail = ReadString("buyerEmail"),
+                            buyerPhone = ReadString("buyerPhone"),
+                            returnUrl,
+                            cancelUrl
+                        })
+                    };
+                    _context.Add(transaction);
+                    await _context.SaveChangesAsync();
+
+                    var result = new
+                    {
+                        bin = create.bin,
+                        accountNumber = create.accountNumber,
+                        amount = create.amount,
+                        description = create.description,
+                        orderCode = create.orderCode,
+                        checkoutUrl = create.checkoutUrl,
+                        qrCode = create.qrCode
+                    };
+                    return Ok(ApiResponse.SuccessResponse(result, "Tạo liên kết thanh toán PayOS thành công"));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error while creating PayOS link for course {CourseId}", courseId);
+                    var baseMsg = ex.InnerException?.Message ?? ex.Message;
+                    var msg = string.IsNullOrWhiteSpace(baseMsg) ? "Lỗi hệ thống khi tạo liên kết thanh toán" : baseMsg;
+                    var status = 500;
+                    if (!_payOS.IsConfigured)
+                    {
+                        status = 503;
+                        msg = "Thiếu cấu hình PayOS (CLIENT_ID/API_KEY/CHECKSUM_KEY)";
+                    }
+                    else if (ex is HttpRequestException)
+                    {
+                        status = 502;
+                    }
+                    else
+                    {
+                        var m = msg.ToLowerInvariant();
+                        if (m.Contains("unauthorized") || m.Contains("401") || m.Contains("forbidden") || m.Contains("403")) status = 502;
+                        else if (m.Contains("bad request") || m.Contains("400") || m.Contains("invalid") || m.Contains("argument") || m.Contains("null")) status = 400;
+                    }
+                    return StatusCode(status, ApiResponse.ErrorResponse(msg, status));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while creating PayOS link for course {CourseId}", courseId);
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi tạo liên kết thanh toán", 500));
+            }
+        }
+
+        [HttpGet("payos/order/{orderCode}")]
+        [Authorize]
+        public async Task<IActionResult> GetPayOSOrder(long orderCode)
+        {
+            try
+            {
+                if (!_payOS.IsConfigured)
+                {
+                    return StatusCode(503, ApiResponse.ErrorResponse("Thiếu cấu hình PayOS (CLIENT_ID/API_KEY/CHECKSUM_KEY)", 503));
+                }
+                var info = await _payOS.GetPaymentLinkInformation(orderCode);
+                var tx = await _context.Set<PaymentTransaction>().FirstOrDefaultAsync(t => t.OrderId == orderCode.ToString());
+                if (tx != null)
+                {
+                    if ((info.amountPaid >= info.amount) || info.status == "PAID")
+                    {
+                        if (tx.Status != "Success")
+                        {
+                            tx.Status = "Success";
+                            tx.PaidAt = DateTime.UtcNow;
+                            await _context.SaveChangesAsync();
+                            var payload = tx.Payload;
+                            int courseId = 0;
+                            try
+                            {
+                                var d = System.Text.Json.JsonDocument.Parse(payload ?? "{}");
+                                if (d.RootElement.TryGetProperty("courseId", out var e)) courseId = e.GetInt32();
+                            }
+                            catch {}
+                            if (courseId > 0)
+                            {
+                                var userId = tx.UserId;
+                                var existingEnrollment = await _context.Enrollments.FirstOrDefaultAsync(en => en.CourseId == courseId && en.UserId == userId && en.Status != "Cancelled");
+                                if (existingEnrollment == null)
+                                {
+                                    var enrollment = new Enrollment { CourseId = courseId, UserId = userId, Status = "Active", EnrollmentDate = DateTime.UtcNow, CreatedAt = DateTime.UtcNow };
+                                    _context.Enrollments.Add(enrollment);
+                                    await _context.SaveChangesAsync();
+                                }
+                            else if (existingEnrollment.Status != "Active")
+                            {
+                                existingEnrollment.Status = "Active";
+                                existingEnrollment.UpdatedAt = DateTime.UtcNow;
+                                await _context.SaveChangesAsync();
+                            }
+
+                            try
+                            {
+                                var course = await _context.Courses.FirstOrDefaultAsync(c => c.CourseId == courseId);
+                                var baseUrl = _config["Services:ChatService:BaseUrl"];
+                                if (!string.IsNullOrWhiteSpace(baseUrl))
+                                {
+                                    var rawAuth = Request.Headers["Authorization"].ToString().Trim('"');
+                                    var token = rawAuth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? rawAuth[7..] : rawAuth;
+                                    using var client = new HttpClient { BaseAddress = new Uri(baseUrl) };
+                                    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                                    var body = new
+                                    {
+                                        title = "Thanh toán khóa học thành công",
+                                        message = $"Người dùng {userId} đã mua khóa học '{(course?.Title ?? courseId.ToString())}' (ID {courseId}).",
+                                        type = "purchase_course"
+                                    };
+                                    var content = new StringContent(System.Text.Json.JsonSerializer.Serialize(body), System.Text.Encoding.UTF8, "application/json");
+                                    await client.PostAsync("/api/notifications/send-to-admins", content);
+                                }
+                            }
+                            catch
+                            {
+                            }
+                        }
+                    }
+                }
+                }
+                if (tx != null && tx.Status == "Success")
+                {
+                    var paidInfo = new
+                    {
+                        orderCode = orderCode,
+                        amount = (int)Math.Round(tx.Amount),
+                        amountPaid = (int)Math.Round(tx.Amount),
+                        status = "PAID"
+                    };
+                    return Ok(ApiResponse.SuccessResponse(paidInfo, "Lấy trạng thái đơn PayOS thành công"));
+                }
+                return Ok(ApiResponse.SuccessResponse(info, "Lấy trạng thái đơn PayOS thành công"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while getting PayOS order info {OrderCode}", orderCode);
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi lấy trạng thái đơn", 500));
+            }
+        }
+
+        [HttpPost("payos/order/{orderCode}/cancel")]
+        [Authorize]
+        public async Task<IActionResult> CancelPayOSOrder(long orderCode, [FromBody] dynamic body)
+        {
+            try
+            {
+                var reason = (string)(body?.cancellationReason ?? "");
+                object? info = null;
+                try
+                {
+                    if (_payOS.IsConfigured)
+                    {
+                        info = await _payOS.CancelPaymentLink(orderCode, reason);
+                    }
+                }
+                catch { }
+
+                var tx = await _context.Set<PaymentTransaction>().FirstOrDefaultAsync(t => t.OrderId == orderCode.ToString());
+                if (tx != null)
+                {
+                    tx.Status = "Canceled";
+                    try
+                    {
+                        var doc = System.Text.Json.JsonDocument.Parse(tx.Payload ?? "{}");
+                        var root = doc.RootElement;
+                        var updated = new System.Text.Json.Nodes.JsonObject();
+                        foreach (var p in root.EnumerateObject())
+                        {
+                            updated[p.Name] = System.Text.Json.Nodes.JsonNode.Parse(p.Value.GetRawText());
+                        }
+                        updated["cancellationReason"] = reason;
+                        updated["canceledAt"] = DateTime.UtcNow.ToString("o");
+                        tx.Payload = updated.ToJsonString();
+                    }
+                    catch
+                    {
+                        tx.Payload = System.Text.Json.JsonSerializer.Serialize(new { cancellationReason = reason, canceledAt = DateTime.UtcNow });
+                    }
+                    await _context.SaveChangesAsync();
+                }
+
+                return Ok(ApiResponse.SuccessResponse(info ?? new { orderCode, status = "CANCELED" }, "Huỷ liên kết thanh toán PayOS thành công"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while canceling PayOS order {OrderCode}", orderCode);
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi huỷ liên kết thanh toán", 500));
             }
         }
     }
@@ -1145,4 +1520,3 @@ namespace ExamsService.Controllers
         public string? PaymentMethod { get; set; }
     }
 }
-

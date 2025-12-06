@@ -12,6 +12,7 @@ namespace API_ThiTracNghiem.Contracts
         public bool IsPaid { get; set; }
         public decimal? Price { get; set; }
         public string? ExternalLink { get; set; }
+        public string? FileUrl { get; set; }
         public int? DurationSeconds { get; set; }
         public int CourseId { get; set; }
         public int? OrderIndex { get; set; }

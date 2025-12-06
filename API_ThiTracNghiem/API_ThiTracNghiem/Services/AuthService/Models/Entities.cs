@@ -126,6 +126,12 @@ public class PermissionRequest
     public string? PaymentStatus { get; set; }
     [Column(TypeName = "decimal(18,2)")]
     public decimal? PaymentAmount { get; set; }
+
+    // Thông tin minh chứng và lý do
+    [MaxLength(500)]
+    public string? EvidenceImageUrl { get; set; }
+    [MaxLength(2000)]
+    public string? Reason { get; set; }
 }
 
 

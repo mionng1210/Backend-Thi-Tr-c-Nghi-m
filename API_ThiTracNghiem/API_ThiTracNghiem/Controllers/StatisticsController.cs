@@ -95,98 +95,177 @@ namespace API_ThiTracNghiem.Controllers
         [HttpGet("exams")]
         public async Task<IActionResult> GetExamsStats([FromQuery] string? subject, [FromQuery] DateTime? dateFrom, [FromQuery] DateTime? dateTo, [FromQuery] string? status)
         {
-            var examsQuery = _db.Exams
-                .AsNoTracking()
-                .Where(e => !e.HasDelete)
-                .Include(e => e.Course)
-                .ThenInclude(c => c!.Subject)
-                .AsQueryable();
-
-            if (!string.IsNullOrWhiteSpace(subject))
+            try
             {
-                examsQuery = examsQuery.Where(e => e.Course != null && e.Course.Subject != null && e.Course.Subject.Name == subject);
-            }
-            if (dateFrom.HasValue)
-            {
-                examsQuery = examsQuery.Where(e => e.StartAt.HasValue && e.StartAt.Value.Date >= dateFrom.Value.Date);
-            }
-            if (dateTo.HasValue)
-            {
-                examsQuery = examsQuery.Where(e => e.EndAt.HasValue && e.EndAt.Value.Date <= dateTo.Value.Date);
-            }
-            if (!string.IsNullOrWhiteSpace(status))
-            {
-                examsQuery = examsQuery.Where(e => e.Status != null && e.Status.Equals(status, StringComparison.OrdinalIgnoreCase));
-            }
+                var examsQuery = _db.Exams
+                    .AsNoTracking()
+                    .Where(e => !e.HasDelete)
+                    .Include(e => e.Course)
+                    .ThenInclude(c => c!.Subject)
+                    .AsQueryable();
 
-            var exams = await examsQuery.ToListAsync();
-            var examIds = exams.Select(e => e.ExamId).ToList();
-
-            var resultsByExam = await _db.Results
-                .AsNoTracking()
-                .Where(r => examIds.Contains(r.ExamId))
-                .GroupBy(r => r.ExamId)
-                .Select(g => new { ExamId = g.Key, Items = g.Select(r => r.TotalScore).ToList() })
-                .ToListAsync();
-
-            var attemptsByExam = await _db.ExamAttempts
-                .AsNoTracking()
-                .Where(a => examIds.Contains(a.ExamId))
-                .GroupBy(a => a.ExamId)
-                .Select(g => new { ExamId = g.Key, Count = g.Count() })
-                .ToListAsync();
-
-            var stats = new List<ExamStatistic>();
-            foreach (var e in exams)
-            {
-                var resGroup = resultsByExam.FirstOrDefault(x => x.ExamId == e.ExamId);
-                var attemptGroup = attemptsByExam.FirstOrDefault(x => x.ExamId == e.ExamId);
-
-                var totalMarks = e.TotalMarks ?? 0m;
-                var scores = new List<decimal>();
-                if (resGroup != null && totalMarks > 0m)
+                if (!string.IsNullOrWhiteSpace(subject))
                 {
-                    foreach (var s in resGroup.Items)
+                    examsQuery = examsQuery.Where(e => e.Course != null && e.Course.Subject != null && e.Course.Subject.Name == subject);
+                }
+                if (dateFrom.HasValue)
+                {
+                    var start = dateFrom.Value.Date;
+                    examsQuery = examsQuery.Where(e => e.StartAt.HasValue && e.StartAt.Value >= start);
+                }
+                if (dateTo.HasValue)
+                {
+                    var end = dateTo.Value.Date.AddDays(1).AddTicks(-1);
+                    examsQuery = examsQuery.Where(e => e.EndAt.HasValue && e.EndAt.Value <= end);
+                }
+                if (!string.IsNullOrWhiteSpace(status))
+                {
+                    examsQuery = examsQuery.Where(e => e.Status != null && e.Status.Equals(status, StringComparison.OrdinalIgnoreCase));
+                }
+
+                var exams = await examsQuery.ToListAsync();
+                var examIds = exams.Select(e => e.ExamId).ToList();
+
+                // Get exam attempts with scores (this is the primary source of score data)
+                // Note: In main API, ExamAttempt uses FinalScore, AutoScore, ManualScore instead of Score/MaxScore
+                var examAttempts = await _db.ExamAttempts
+                    .AsNoTracking()
+                    .Where(a => examIds.Contains(a.ExamId) && a.SubmittedAt.HasValue)
+                    .Select(a => new { a.ExamId, a.FinalScore, a.AutoScore, a.ManualScore })
+                    .ToListAsync();
+
+                // Also get Results as fallback
+                var rawResults = await _db.Results
+                    .AsNoTracking()
+                    .Where(r => examIds.Contains(r.ExamId))
+                    .Select(r => new { r.ExamId, r.TotalScore })
+                    .ToListAsync();
+
+                // Group attempts by exam
+                var attemptsByExam = examAttempts
+                    .GroupBy(a => a.ExamId)
+                    .Select(g => new 
+                    { 
+                        ExamId = g.Key, 
+                        Items = g.Select(a => new { a.FinalScore, a.AutoScore, a.ManualScore }).ToList(),
+                        Count = g.Count()
+                    })
+                    .ToList();
+
+                // Group results by exam (fallback)
+                var resultsByExam = rawResults
+                    .GroupBy(r => r.ExamId)
+                    .Select(g => new { ExamId = g.Key, Items = g.Select(r => r.TotalScore).ToList() })
+                    .ToList();
+
+                var stats = new List<ExamStatistic>();
+                foreach (var e in exams)
+                {
+                    var attemptGroup = attemptsByExam.FirstOrDefault(x => x.ExamId == e.ExamId);
+                    var resGroup = resultsByExam.FirstOrDefault(x => x.ExamId == e.ExamId);
+
+                    var totalMarks = e.TotalMarks ?? 0m;
+                    var scores = new List<decimal>();
+                    
+                    // Prefer ExamAttempts data (FinalScore) over Results
+                    if (attemptGroup != null && attemptGroup.Items.Any() && totalMarks > 0m)
                     {
-                        if (s.HasValue)
+                        foreach (var attempt in attemptGroup.Items)
                         {
-                            scores.Add((s.Value / totalMarks) * 10m);
+                            // Use FinalScore if available, otherwise AutoScore, otherwise ManualScore
+                            var score = attempt.FinalScore ?? attempt.AutoScore ?? attempt.ManualScore;
+                            if (score.HasValue && score.Value >= 0)
+                            {
+                                scores.Add((score.Value / totalMarks) * 10m);
+                            }
                         }
                     }
+                    // Fallback to Results if no attempts
+                    else if (resGroup != null && totalMarks > 0m)
+                    {
+                        foreach (var s in resGroup.Items)
+                        {
+                            if (s.HasValue)
+                            {
+                                scores.Add((s.Value / totalMarks) * 10m);
+                            }
+                        }
+                    }
+
+                    decimal avg = scores.Any() ? scores.Average() : 0m;
+                    decimal highest = scores.Any() ? scores.Max() : 0m;
+                    decimal lowest = scores.Any() ? scores.Min() : 0m;
+
+                    var passMark = e.PassingMark ?? 0m;
+                    int pass = 0;
+                    var totalParticipants = attemptGroup?.Count ?? 0;
+                    
+                    // Calculate pass rate from attempts
+                    if (attemptGroup != null && totalMarks > 0m)
+                    {
+                        pass = attemptGroup.Items.Count(x => 
+                        {
+                            var score = x.FinalScore ?? x.AutoScore ?? x.ManualScore;
+                            if (!score.HasValue) return false;
+                            var normalizedScore = (score.Value / totalMarks) * 10m;
+                            return normalizedScore >= passMark;
+                        });
+                    }
+                    // Fallback to Results
+                    else if (resGroup != null)
+                    {
+                        pass = resGroup.Items.Count(x => x.HasValue && x.Value >= passMark);
+                        totalParticipants = resGroup.Items.Count;
+                    }
+                    
+                    var passRate = totalParticipants > 0 ? (decimal)pass * 100m / (decimal)totalParticipants : 0m;
+
+                    var distribution = BuildDistribution(scores);
+
+                    stats.Add(new ExamStatistic
+                    {
+                        Id = e.ExamId.ToString(),
+                        ExamName = e.Title,
+                        Subject = e.Course?.Subject?.Name,
+                        TotalParticipants = attemptGroup?.Count ?? 0,
+                        AverageScore = Math.Round(avg, 2),
+                        HighestScore = Math.Round(highest, 2),
+                        LowestScore = Math.Round(lowest, 2),
+                        PassRate = Math.Round(passRate, 2),
+                        Duration = e.DurationMinutes,
+                        Date = e.StartAt?.ToString("yyyy-MM-dd"),
+                        ScoreDistribution = distribution
+                    });
                 }
 
-                decimal avg = scores.Any() ? scores.Average() : 0m;
-                decimal highest = scores.Any() ? scores.Max() : 0m;
-                decimal lowest = scores.Any() ? scores.Min() : 0m;
+                return Ok(stats);
+            }
+            catch (Exception ex)
+            {
+                var fallbackExams = await _db.Exams
+                    .AsNoTracking()
+                    .Where(e => !e.HasDelete)
+                    .Include(e => e.Course)
+                    .ThenInclude(c => c!.Subject)
+                    .ToListAsync();
 
-                var passMark = e.PassingMark ?? 0m;
-                int pass = 0;
-                if (resGroup != null)
-                {
-                    pass = resGroup.Items.Count(x => x.HasValue && x.Value >= passMark);
-                }
-                var totalRes = resGroup?.Items.Count ?? 0;
-                var passRate = totalRes > 0 ? (decimal)pass * 100m / (decimal)totalRes : 0m;
-
-                var distribution = BuildDistribution(scores);
-
-                stats.Add(new ExamStatistic
+                var basic = fallbackExams.Select(e => new ExamStatistic
                 {
                     Id = e.ExamId.ToString(),
                     ExamName = e.Title,
                     Subject = e.Course?.Subject?.Name,
-                    TotalParticipants = attemptGroup?.Count ?? 0,
-                    AverageScore = Math.Round(avg, 2),
-                    HighestScore = Math.Round(highest, 2),
-                    LowestScore = Math.Round(lowest, 2),
-                    PassRate = Math.Round(passRate, 2),
+                    TotalParticipants = 0,
+                    AverageScore = 0,
+                    HighestScore = 0,
+                    LowestScore = 0,
+                    PassRate = 0,
                     Duration = e.DurationMinutes,
                     Date = e.StartAt?.ToString("yyyy-MM-dd"),
-                    ScoreDistribution = distribution
-                });
-            }
+                    ScoreDistribution = new List<ScoreBucket>()
+                }).ToList();
 
-            return Ok(stats);
+                return Ok(basic);
+            }
         }
 
         private static List<ScoreBucket> BuildDistribution(List<decimal> normalizedScores)
@@ -213,4 +292,3 @@ namespace API_ThiTracNghiem.Controllers
         }
     }
 }
-

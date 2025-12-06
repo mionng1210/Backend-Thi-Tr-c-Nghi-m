@@ -447,43 +447,103 @@ namespace ExamsService.Controllers
                     return BadRequest(ApiResponse.ErrorResponse($"Bài thi này đã {examAttempt.Status}", 400));
                 }
 
-                // Get exam questions
-                _logger.LogInformation("GetExamAttempt: Loading questions for examId: {ExamId}", examAttempt.ExamId);
+                // ✅ Get exam questions - từ variant hoặc từ ExamQuestions
+                _logger.LogInformation("GetExamAttempt: Loading questions for examId: {ExamId}, VariantCode: {VariantCode}", 
+                    examAttempt.ExamId, examAttempt.VariantCode);
                 
-                var examQuestions = await _context.ExamQuestions
-                    .Include(eq => eq.Question)
-                    .ThenInclude(q => q.Bank)
-                    .Where(eq => eq.ExamId == examAttempt.ExamId && !eq.HasDelete && !eq.Question.HasDelete)
-                    .OrderBy(eq => eq.SequenceIndex)
-                    .ToListAsync();
-
-                _logger.LogInformation("GetExamAttempt: Found {QuestionCount} questions", examQuestions.Count);
-
-                // Prepare questions for response
                 var questions = new List<ExamQuestionDto>();
-                foreach (var examQuestion in examQuestions)
+                
+                // ✅ Nếu có VariantCode, lấy câu hỏi từ variant
+                if (!string.IsNullOrEmpty(examAttempt.VariantCode))
                 {
-                    var answerOptions = await _context.AnswerOptions
-                         .Where(ao => ao.QuestionId == examQuestion.QuestionId && !ao.HasDelete)
-                         .Select(ao => new AnswerOptionDto
-                         {
-                             OptionId = ao.OptionId,
-                             Content = ao.Content,
-                             IsCorrect = false, // Don't reveal correct answers
-                             SequenceIndex = ao.OrderIndex
-                         })
-                         .OrderBy(ao => ao.SequenceIndex)
-                         .ToListAsync();
+                    var variant = await _context.ExamVariants
+                        .Include(v => v.Questions)
+                            .ThenInclude(vq => vq.Question)
+                                .ThenInclude(q => q.Bank)
+                        .FirstOrDefaultAsync(v => v.ExamId == examAttempt.ExamId && 
+                                                 v.VariantCode == examAttempt.VariantCode && 
+                                                 !v.HasDelete);
+                    
+                    if (variant != null)
+                    {
+                        var variantQuestions = variant.Questions
+                            .Where(vq => !vq.HasDelete && !vq.Question.HasDelete)
+                            .OrderBy(vq => vq.SequenceIndex)
+                            .ToList();
+                        
+                        _logger.LogInformation("GetExamAttempt: Found {QuestionCount} questions from variant {VariantCode}", 
+                            variantQuestions.Count, examAttempt.VariantCode);
+                        
+                        foreach (var variantQuestion in variantQuestions)
+                        {
+                            var answerOptions = await _context.AnswerOptions
+                                 .Where(ao => ao.QuestionId == variantQuestion.QuestionId && !ao.HasDelete)
+                                 .Select(ao => new AnswerOptionDto
+                                 {
+                                     OptionId = ao.OptionId,
+                                     Content = ao.Content,
+                                     IsCorrect = false, // Don't reveal correct answers
+                                     SequenceIndex = ao.OrderIndex
+                                 })
+                                 .OrderBy(ao => ao.SequenceIndex)
+                                 .ToListAsync();
 
-                     questions.Add(new ExamQuestionDto
-                     {
-                         QuestionId = examQuestion.QuestionId,
-                         Content = examQuestion.Question.Content,
-                         QuestionType = examQuestion.Question.QuestionType,
-                         Difficulty = examQuestion.Question.Difficulty,
-                         Marks = examQuestion.Marks,
-                         Options = answerOptions
-                     });
+                             questions.Add(new ExamQuestionDto
+                             {
+                                 QuestionId = variantQuestion.QuestionId,
+                                 Content = variantQuestion.Question.Content,
+                                 QuestionType = variantQuestion.Question.QuestionType,
+                                 Difficulty = variantQuestion.Question.Difficulty,
+                                 Marks = variantQuestion.Marks,
+                                 SequenceIndex = variantQuestion.SequenceIndex,
+                                 Options = answerOptions
+                             });
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning("GetExamAttempt: Variant {VariantCode} not found, falling back to ExamQuestions", 
+                            examAttempt.VariantCode);
+                    }
+                }
+                
+                // ✅ Nếu không có variant hoặc variant không có câu hỏi, lấy từ ExamQuestions
+                if (!questions.Any())
+                {
+                    var examQuestions = await _context.ExamQuestions
+                        .Include(eq => eq.Question)
+                            .ThenInclude(q => q.Bank)
+                        .Where(eq => eq.ExamId == examAttempt.ExamId && !eq.HasDelete && !eq.Question.HasDelete)
+                        .OrderBy(eq => eq.SequenceIndex)
+                        .ToListAsync();
+
+                    _logger.LogInformation("GetExamAttempt: Found {QuestionCount} questions from ExamQuestions", examQuestions.Count);
+
+                    foreach (var examQuestion in examQuestions)
+                    {
+                        var answerOptions = await _context.AnswerOptions
+                             .Where(ao => ao.QuestionId == examQuestion.QuestionId && !ao.HasDelete)
+                             .Select(ao => new AnswerOptionDto
+                             {
+                                 OptionId = ao.OptionId,
+                                 Content = ao.Content,
+                                 IsCorrect = false, // Don't reveal correct answers
+                                 SequenceIndex = ao.OrderIndex
+                             })
+                             .OrderBy(ao => ao.SequenceIndex)
+                             .ToListAsync();
+
+                         questions.Add(new ExamQuestionDto
+                         {
+                             QuestionId = examQuestion.QuestionId,
+                             Content = examQuestion.Question.Content,
+                             QuestionType = examQuestion.Question.QuestionType,
+                             Difficulty = examQuestion.Question.Difficulty,
+                             Marks = examQuestion.Marks,
+                             SequenceIndex = examQuestion.SequenceIndex,
+                             Options = answerOptions
+                         });
+                    }
                 }
 
                 // Randomize questions if enabled (same order as when started)
@@ -1521,30 +1581,87 @@ namespace ExamsService.Controllers
                     return Forbid();
                 }
 
-                // Get available questions from question banks
-                var availableQuestions = await _context.Questions
-                    .Include(q => q.Bank)
-                    .Where(q => !q.HasDelete && q.Bank != null && !q.Bank.HasDelete)
+                // ✅ CẢI THIỆN: Lấy câu hỏi từ ExamQuestions (đã được thêm vào bài thi)
+                var examQuestions = await _context.ExamQuestions
+                    .Include(eq => eq.Question)
+                        .ThenInclude(q => q.Bank)
+                    .Where(eq => eq.ExamId == id && !eq.HasDelete && !eq.Question.HasDelete)
                     .ToListAsync();
 
-                var variants = new List<ExamVariant>();
+                if (!examQuestions.Any())
+                {
+                    return BadRequest(ApiResponse.ErrorResponse(
+                        "Bài thi chưa có câu hỏi. Vui lòng thêm câu hỏi vào bài thi trước khi trộn.", 
+                        400));
+                }
+
+                // Lấy danh sách câu hỏi từ ExamQuestions
+                var availableQuestions = examQuestions
+                    .Select(eq => eq.Question)
+                    .Where(q => q != null)
+                    .ToList();
+
+                // Kiểm tra số lượng câu hỏi đủ không
+                var totalRequested = request.DifficultyDistribution.Sum(d => d.QuestionCount);
+                if (totalRequested > availableQuestions.Count)
+                {
+                    return BadRequest(ApiResponse.ErrorResponse(
+                        $"Không đủ câu hỏi. Bài thi có {availableQuestions.Count} câu, nhưng yêu cầu {totalRequested} câu.", 
+                        400));
+                }
+
+                // Xóa các variants cũ của bài thi này (nếu có)
+                var existingVariants = await _context.ExamVariants
+                    .Where(v => v.ExamId == id && !v.HasDelete)
+                    .ToListAsync();
+                
+                foreach (var variant in existingVariants)
+                {
+                    variant.HasDelete = true;
+                }
+                await _context.SaveChangesAsync();
+
+                var variantDtos = new List<DTOs.ExamVariant>();
 
                 for (int variantIndex = 0; variantIndex < request.NumberOfVariants; variantIndex++)
                 {
                     var variantCode = $"V{variantIndex + 1:D2}";
                     var selectedQuestions = new List<ExamQuestionDto>();
                     decimal totalMarks = 0;
+                    
+                    // ✅ Tạo Random với seed hoàn toàn khác nhau cho mỗi variant
+                    // Sử dụng variantIndex * 10000 + examId để đảm bảo seed khác nhau hoàn toàn
+                    var random = new Random((variantIndex * 10000 + id) ^ (int)DateTime.UtcNow.Ticks);
+                    
+                    // ✅ Track các câu hỏi đã được sử dụng cho variant này
+                    var usedQuestionIds = new HashSet<int>();
 
                     foreach (var distribution in request.DifficultyDistribution)
                     {
-                        var questionsForDifficulty = availableQuestions
-                            .Where(q => q.Difficulty?.ToLower() == distribution.Difficulty.ToLower())
-                            .OrderBy(x => Guid.NewGuid()) // Random order
-                            .Take(distribution.QuestionCount)
+                        // ✅ Lấy tất cả câu hỏi có độ khó phù hợp, chưa được dùng trong variant này
+                        var candidateQuestions = availableQuestions
+                            .Where(q => q.Difficulty?.ToLower() == distribution.Difficulty.ToLower()
+                                && !usedQuestionIds.Contains(q.QuestionId))
                             .ToList();
+                        
+                        // ✅ Fisher-Yates Shuffle Algorithm - đảm bảo tính ngẫu nhiên tốt hơn
+                        var shuffled = new List<Question>(candidateQuestions);
+                        for (int i = shuffled.Count - 1; i > 0; i--)
+                        {
+                            int j = random.Next(i + 1);
+                            var temp = shuffled[i];
+                            shuffled[i] = shuffled[j];
+                            shuffled[j] = temp;
+                        }
+                        
+                        // ✅ Lấy số lượng câu hỏi cần thiết
+                        var questionsForDifficulty = shuffled.Take(distribution.QuestionCount).ToList();
 
                         foreach (var question in questionsForDifficulty)
                         {
+                            // ✅ Đánh dấu câu hỏi đã được sử dụng
+                            usedQuestionIds.Add(question.QuestionId);
+                            
                             var answerOptions = await _context.AnswerOptions
                                  .Where(ao => ao.QuestionId == question.QuestionId && !ao.HasDelete)
                                  .Select(ao => new AnswerOptionDto
@@ -1571,19 +1688,65 @@ namespace ExamsService.Controllers
                         }
                     }
 
-                    variants.Add(new ExamVariant
+                    // ✅ Fisher-Yates Shuffle lại toàn bộ câu hỏi trong variant
+                    // Đảm bảo thứ tự hoàn toàn khác nhau giữa các variant
+                    for (int i = selectedQuestions.Count - 1; i > 0; i--)
+                    {
+                        int j = random.Next(i + 1);
+                        var temp = selectedQuestions[i];
+                        selectedQuestions[i] = selectedQuestions[j];
+                        selectedQuestions[j] = temp;
+                    }
+
+                    // ✅ Lưu variant vào database
+                    var variant = new Models.ExamVariant
+                    {
+                        ExamId = id,
+                        VariantCode = variantCode,
+                        TotalMarks = totalMarks,
+                        CreatedAt = DateTime.UtcNow,
+                        HasDelete = false
+                    };
+                    _context.ExamVariants.Add(variant);
+                    await _context.SaveChangesAsync();
+
+                    // Lưu câu hỏi vào variant với SequenceIndex đã được shuffle
+                    for (int i = 0; i < selectedQuestions.Count; i++)
+                    {
+                        var variantQuestion = new Models.ExamVariantQuestion
+                        {
+                            VariantId = variant.VariantId,
+                            QuestionId = selectedQuestions[i].QuestionId,
+                            SequenceIndex = i + 1, // Thứ tự sau khi shuffle
+                            Marks = selectedQuestions[i].Marks ?? 0,
+                            CreatedAt = DateTime.UtcNow,
+                            HasDelete = false
+                        };
+                        _context.ExamVariantQuestions.Add(variantQuestion);
+                    }
+                    
+                    // ✅ Log để debug: kiểm tra thứ tự câu hỏi của variant
+                    _logger.LogInformation(
+                        "Variant {VariantCode} (ExamId: {ExamId}) - Questions order: {QuestionIds}",
+                        variantCode, id, 
+                        string.Join(", ", selectedQuestions.Select(q => $"{q.QuestionId}({q.Content.Substring(0, Math.Min(20, q.Content.Length))}...)")));
+
+                    // Tạo DTO cho response
+                    variantDtos.Add(new DTOs.ExamVariant
                     {
                         VariantCode = variantCode,
-                        Questions = selectedQuestions.OrderBy(x => Guid.NewGuid()).ToList(), // Shuffle questions
+                        Questions = selectedQuestions,
                         TotalMarks = totalMarks
                     });
                 }
 
+                await _context.SaveChangesAsync();
+
                 var response = new MixQuestionsResponse
                 {
                     ExamId = id,
-                    Variants = variants,
-                    Message = $"Đã tạo thành công {request.NumberOfVariants} đề thi với {request.TotalQuestions} câu hỏi mỗi đề"
+                    Variants = variantDtos,
+                    Message = $"Đã tạo thành công {request.NumberOfVariants} mã đề với {request.TotalQuestions} câu hỏi mỗi đề"
                 };
 
                 return Ok(ApiResponse.SuccessResponse(response));
@@ -1702,17 +1865,115 @@ namespace ExamsService.Controllers
                     }
                 }
 
-                // Get exam questions
-                var examQuestions = await _context.ExamQuestions
-                    .Include(eq => eq.Question)
-                    .ThenInclude(q => q.Bank)
-                    .Where(eq => eq.ExamId == id && !eq.HasDelete && !eq.Question.HasDelete)
-                    .OrderBy(eq => eq.SequenceIndex)
-                    .ToListAsync();
-
-                if (!examQuestions.Any())
+                // ✅ CẢI THIỆN: Tự động chọn variant nếu bài thi có variants
+                string? selectedVariantCode = request.VariantCode;
+                if (string.IsNullOrEmpty(selectedVariantCode))
                 {
-                    return BadRequest(ApiResponse.ErrorResponse("Bài thi chưa có câu hỏi", 400));
+                    // Kiểm tra bài thi có variants không?
+                    var availableVariants = await _context.ExamVariants
+                        .Where(v => v.ExamId == id && !v.HasDelete)
+                        .Select(v => v.VariantCode)
+                        .ToListAsync();
+                    
+                    if (availableVariants.Any())
+                    {
+                        // Chọn ngẫu nhiên 1 variant
+                        var random = new Random();
+                        selectedVariantCode = availableVariants[random.Next(availableVariants.Count)];
+                    }
+                }
+
+                // Get exam questions - từ variant hoặc từ ExamQuestions
+                List<ExamQuestionDto> questions = new List<ExamQuestionDto>();
+                
+                if (!string.IsNullOrEmpty(selectedVariantCode))
+                {
+                    // Lấy câu hỏi từ variant
+                    var variant = await _context.ExamVariants
+                        .Include(v => v.Questions)
+                            .ThenInclude(vq => vq.Question)
+                                .ThenInclude(q => q.Bank)
+                        .FirstOrDefaultAsync(v => v.ExamId == id && v.VariantCode == selectedVariantCode && !v.HasDelete);
+                    
+                    if (variant != null)
+                    {
+                        var variantQuestions = variant.Questions
+                            .Where(vq => !vq.HasDelete && !vq.Question.HasDelete)
+                            .OrderBy(vq => vq.SequenceIndex)
+                            .ToList();
+                        
+                        foreach (var variantQuestion in variantQuestions)
+                        {
+                            var answerOptions = await _context.AnswerOptions
+                                 .Where(ao => ao.QuestionId == variantQuestion.QuestionId && !ao.HasDelete)
+                                 .Select(ao => new AnswerOptionDto
+                                 {
+                                     OptionId = ao.OptionId,
+                                     Content = ao.Content,
+                                     IsCorrect = false, // Don't reveal correct answers
+                                     SequenceIndex = ao.OrderIndex
+                                 })
+                                 .OrderBy(ao => ao.SequenceIndex)
+                                 .ToListAsync();
+
+                             questions.Add(new ExamQuestionDto
+                             {
+                                 QuestionId = variantQuestion.QuestionId,
+                                 Content = variantQuestion.Question.Content,
+                                 QuestionType = variantQuestion.Question.QuestionType,
+                                 Difficulty = variantQuestion.Question.Difficulty,
+                                 Marks = variantQuestion.Marks,
+                                 Options = answerOptions
+                             });
+                        }
+                    }
+                }
+                
+                // Nếu không có variant hoặc variant không có câu hỏi, lấy từ ExamQuestions
+                if (!questions.Any())
+                {
+                    var examQuestions = await _context.ExamQuestions
+                        .Include(eq => eq.Question)
+                            .ThenInclude(q => q.Bank)
+                        .Where(eq => eq.ExamId == id && !eq.HasDelete && !eq.Question.HasDelete)
+                        .OrderBy(eq => eq.SequenceIndex)
+                        .ToListAsync();
+
+                    if (!examQuestions.Any())
+                    {
+                        return BadRequest(ApiResponse.ErrorResponse("Bài thi chưa có câu hỏi", 400));
+                    }
+
+                    foreach (var examQuestion in examQuestions)
+                    {
+                        var answerOptions = await _context.AnswerOptions
+                             .Where(ao => ao.QuestionId == examQuestion.QuestionId && !ao.HasDelete)
+                             .Select(ao => new AnswerOptionDto
+                             {
+                                 OptionId = ao.OptionId,
+                                 Content = ao.Content,
+                                 IsCorrect = false, // Don't reveal correct answers
+                                 SequenceIndex = ao.OrderIndex
+                             })
+                             .OrderBy(ao => ao.SequenceIndex)
+                             .ToListAsync();
+
+                         questions.Add(new ExamQuestionDto
+                         {
+                             QuestionId = examQuestion.QuestionId,
+                             Content = examQuestion.Question.Content,
+                             QuestionType = examQuestion.Question.QuestionType,
+                             Difficulty = examQuestion.Question.Difficulty,
+                             Marks = examQuestion.Marks,
+                             Options = answerOptions
+                         });
+                    }
+
+                    // Randomize questions if enabled (chỉ khi không dùng variant)
+                    if (exam.RandomizeQuestions)
+                    {
+                        questions = questions.OrderBy(x => Guid.NewGuid()).ToList();
+                    }
                 }
 
                 // Create exam attempt
@@ -1720,7 +1981,7 @@ namespace ExamsService.Controllers
                 {
                     ExamId = id,
                     UserId = userId.Value,
-                    VariantCode = request.VariantCode,
+                    VariantCode = selectedVariantCode,
                     StartTime = now,
                     EndTime = exam.DurationMinutes.HasValue ? now.AddMinutes(exam.DurationMinutes.Value) : null,
                     Status = "InProgress",
@@ -1732,45 +1993,12 @@ namespace ExamsService.Controllers
                 _context.ExamAttempts.Add(examAttempt);
                 await _context.SaveChangesAsync();
 
-                // Prepare questions for response
-                var questions = new List<ExamQuestionDto>();
-                foreach (var examQuestion in examQuestions)
-                {
-                    var answerOptions = await _context.AnswerOptions
-                         .Where(ao => ao.QuestionId == examQuestion.QuestionId && !ao.HasDelete)
-                         .Select(ao => new AnswerOptionDto
-                         {
-                             OptionId = ao.OptionId,
-                             Content = ao.Content,
-                             IsCorrect = false, // Don't reveal correct answers
-                             SequenceIndex = ao.OrderIndex
-                         })
-                         .OrderBy(ao => ao.SequenceIndex)
-                         .ToListAsync();
-
-                     questions.Add(new ExamQuestionDto
-                     {
-                         QuestionId = examQuestion.QuestionId,
-                         Content = examQuestion.Question.Content,
-                         QuestionType = examQuestion.Question.QuestionType,
-                         Difficulty = examQuestion.Question.Difficulty,
-                         Marks = examQuestion.Marks,
-                         Options = answerOptions
-                     });
-                }
-
-                // Randomize questions if enabled
-                if (exam.RandomizeQuestions)
-                {
-                    questions = questions.OrderBy(x => Guid.NewGuid()).ToList();
-                }
-
                 var response = new StartExamResponse
                 {
                     ExamAttemptId = examAttempt.ExamAttemptId,
                     ExamId = id,
                     ExamTitle = exam.Title,
-                    VariantCode = request.VariantCode,
+                    VariantCode = selectedVariantCode,
                     StartTime = examAttempt.StartTime,
                     EndTime = examAttempt.EndTime,
                     DurationMinutes = exam.DurationMinutes ?? 0,
@@ -1945,6 +2173,19 @@ namespace ExamsService.Controllers
                     submittedAnswerEntity.EarnedMarks = earnedMarks;
                     totalScore += earnedMarks;
 
+                    // Get all options for this question
+                    var allOptions = question.AnswerOptions
+                        .Where(ao => !ao.HasDelete)
+                        .OrderBy(ao => ao.OrderIndex ?? ao.OptionId)
+                        .Select(ao => new AnswerOptionDto
+                        {
+                            OptionId = ao.OptionId,
+                            Content = ao.Content,
+                            IsCorrect = ao.IsCorrect,
+                            SequenceIndex = ao.OrderIndex ?? 0
+                        })
+                        .ToList();
+
                     // Add to results
                     questionResults.Add(new QuestionResultDto
                     {
@@ -1953,9 +2194,10 @@ namespace ExamsService.Controllers
                         Marks = questionMarks,
                         EarnedMarks = earnedMarks,
                         IsCorrect = isCorrect,
-                        CorrectOptionIds = question.AnswerOptions.Where(ao => ao.IsCorrect).Select(ao => ao.OptionId).ToList(),
+                        CorrectOptionIds = question.AnswerOptions.Where(ao => ao.IsCorrect && !ao.HasDelete).Select(ao => ao.OptionId).ToList(),
                         SelectedOptionIds = submittedAnswer.SelectedOptionIds ?? new List<int>(),
-                        TextAnswer = submittedAnswer.TextAnswer
+                        TextAnswer = submittedAnswer.TextAnswer,
+                        Options = allOptions
                     });
                 }
 
@@ -2427,6 +2669,177 @@ namespace ExamsService.Controllers
             {
                 _logger.LogError(ex, "Error getting exam results for exam {ExamId}", examId);
                 return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi lấy kết quả thi", 500));
+            }
+        }
+
+        /// <summary>
+        /// Lấy kết quả chi tiết bài thi theo attemptId (bao gồm câu hỏi, đáp án, lựa chọn của người dùng)
+        /// </summary>
+        [HttpGet("results/attempt/{attemptId}")]
+        [Authorize]
+        public async Task<IActionResult> GetExamResultDetail(int attemptId)
+        {
+            try
+            {
+                var userId = HttpContext.GetSyncedUserId();
+                if (!userId.HasValue)
+                {
+                    return Unauthorized(ApiResponse.ErrorResponse("Không thể xác thực người dùng", 401));
+                }
+
+                // Get exam attempt
+                var examAttempt = await _context.ExamAttempts
+                    .Include(ea => ea.Exam)
+                        .ThenInclude(e => e.Course)
+                            .ThenInclude(c => c.Subject)
+                    .FirstOrDefaultAsync(ea => ea.ExamAttemptId == attemptId && !ea.HasDelete);
+
+                if (examAttempt == null)
+                {
+                    return NotFound(ApiResponse.ErrorResponse("Không tìm thấy kết quả bài thi", 404));
+                }
+
+                // Check permission
+                var userRole = HttpContext.GetSyncedUserRole();
+                if (examAttempt.UserId != userId.Value && userRole != "Admin" && userRole != "Teacher")
+                {
+                    return StatusCode(403, ApiResponse.ErrorResponse("Không có quyền truy cập kết quả này", 403));
+                }
+
+                if (!examAttempt.IsSubmitted)
+                {
+                    return BadRequest(ApiResponse.ErrorResponse("Bài thi chưa được nộp", 400));
+                }
+
+                // Get submitted answers with options
+                var submittedAnswers = await _context.SubmittedAnswers
+                    .Include(sa => sa.Question)
+                        .ThenInclude(q => q.AnswerOptions)
+                    .Include(sa => sa.ExamAttempt)
+                    .Where(sa => sa.ExamAttemptId == attemptId && !sa.HasDelete)
+                    .ToListAsync();
+
+                // Get submitted answer options
+                var submittedAnswerOptions = await _context.SubmittedAnswerOptions
+                    .Where(sao => submittedAnswers.Select(sa => sa.SubmittedAnswerId).Contains(sao.SubmittedAnswerId))
+                    .ToListAsync();
+
+                // Build question results with options
+                var questionResults = new List<QuestionResultDto>();
+                foreach (var submittedAnswer in submittedAnswers.OrderBy(sa => sa.QuestionId))
+                {
+                    var question = submittedAnswer.Question;
+                    if (question == null) continue;
+
+                    // Get all options for this question
+                    var allOptions = question.AnswerOptions
+                        .Where(ao => !ao.HasDelete)
+                        .OrderBy(ao => ao.OrderIndex ?? ao.OptionId)
+                        .Select(ao => new AnswerOptionDto
+                        {
+                            OptionId = ao.OptionId,
+                            Content = ao.Content,
+                            IsCorrect = ao.IsCorrect,
+                            SequenceIndex = ao.OrderIndex ?? 0
+                        })
+                        .ToList();
+
+                    // Get selected option IDs
+                    var selectedOptionIds = submittedAnswerOptions
+                        .Where(sao => sao.SubmittedAnswerId == submittedAnswer.SubmittedAnswerId)
+                        .Select(sao => sao.AnswerOptionId)
+                        .ToList();
+
+                    // Get correct option IDs
+                    var correctOptionIds = question.AnswerOptions
+                        .Where(ao => ao.IsCorrect && !ao.HasDelete)
+                        .Select(ao => ao.OptionId)
+                        .ToList();
+
+                    // ✅ Re-verify isCorrect by comparing sets (in case data was saved incorrectly)
+                    bool isCorrect = false;
+                    decimal earnedMarks = 0;
+                    
+                    if (selectedOptionIds.Any() && correctOptionIds.Any())
+                    {
+                        var selectedSet = selectedOptionIds.ToHashSet();
+                        var correctSet = correctOptionIds.ToHashSet();
+                        
+                        // Check if sets are equal (all correct options selected, no incorrect options)
+                        isCorrect = selectedSet.SetEquals(correctSet);
+                    }
+                    else if (!string.IsNullOrEmpty(submittedAnswer.TextAnswer))
+                    {
+                        // For text answers, use the saved value
+                        isCorrect = submittedAnswer.IsCorrect;
+                    }
+
+                    // Get question marks from ExamQuestions
+                    var examQuestion = await _context.ExamQuestions
+                        .FirstOrDefaultAsync(eq => eq.ExamId == examAttempt.ExamId && eq.QuestionId == question.QuestionId);
+                    
+                    var questionMarks = examQuestion?.Marks ?? 0;
+                    
+                    // Recalculate earnedMarks based on verified isCorrect
+                    if (isCorrect && questionMarks > 0)
+                    {
+                        earnedMarks = questionMarks;
+                    }
+                    else
+                    {
+                        earnedMarks = 0;
+                    }
+
+                    questionResults.Add(new QuestionResultDto
+                    {
+                        QuestionId = question.QuestionId,
+                        Content = question.Content,
+                        Marks = questionMarks,
+                        EarnedMarks = earnedMarks,
+                        IsCorrect = isCorrect, // ✅ Use re-verified value
+                        CorrectOptionIds = correctOptionIds,
+                        SelectedOptionIds = selectedOptionIds,
+                        TextAnswer = submittedAnswer.TextAnswer,
+                        Options = allOptions
+                    });
+                }
+
+                // Calculate summary
+                var totalScore = submittedAnswers.Sum(sa => sa.EarnedMarks);
+                var maxScore = examAttempt.MaxScore ?? examAttempt.Exam?.TotalMarks ?? 0;
+                var percentage = maxScore > 0 ? (totalScore / maxScore) * 100 : 0;
+                var isPassed = totalScore >= (examAttempt.Exam?.PassingMark ?? 0);
+
+                // Calculate time spent
+                int timeSpentSeconds = 0;
+                if (examAttempt.StartTime != null && examAttempt.SubmittedAt != null)
+                {
+                    timeSpentSeconds = (int)(examAttempt.SubmittedAt.Value - examAttempt.StartTime).TotalSeconds;
+                }
+
+                var response = new SubmitExamResponse
+                {
+                    ExamAttemptId = examAttempt.ExamAttemptId,
+                    ExamId = examAttempt.ExamId,
+                    ExamTitle = examAttempt.Exam?.Title ?? "",
+                    Score = totalScore,
+                    MaxScore = maxScore,
+                    Percentage = percentage,
+                    IsPassed = isPassed,
+                    StartTime = examAttempt.StartTime,
+                    SubmittedAt = examAttempt.SubmittedAt ?? DateTime.UtcNow,
+                    TimeSpentMinutes = examAttempt.TimeSpentMinutes ?? (timeSpentSeconds / 60),
+                    TimeSpentSeconds = timeSpentSeconds,
+                    Status = examAttempt.Status,
+                    QuestionResults = questionResults
+                };
+
+                return Ok(ApiResponse.SuccessResponse(response));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting exam result detail for attempt {AttemptId}", attemptId);
+                return StatusCode(500, ApiResponse.ErrorResponse("Lỗi hệ thống khi lấy kết quả chi tiết", 500));
             }
         }
 

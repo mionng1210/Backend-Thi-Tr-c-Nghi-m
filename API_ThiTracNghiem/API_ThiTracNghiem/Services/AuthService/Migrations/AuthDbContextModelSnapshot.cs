@@ -17,7 +17,7 @@ namespace AuthService.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.21")
+                .HasAnnotation("ProductVersion", "8.0.22")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -130,6 +130,10 @@ namespace AuthService.Migrations
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
 
+                    b.Property<string>("EvidenceImageUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<decimal?>("PaymentAmount")
                         .HasColumnType("decimal(18,2)");
 
@@ -144,6 +148,10 @@ namespace AuthService.Migrations
                     b.Property<string>("PaymentStatus")
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<string>("RejectReason")
                         .HasMaxLength(1000)
@@ -214,21 +222,21 @@ namespace AuthService.Migrations
                         new
                         {
                             RoleId = 1,
-                            CreatedAt = new DateTime(2025, 11, 6, 4, 3, 38, 196, DateTimeKind.Utc).AddTicks(5232),
+                            CreatedAt = new DateTime(2025, 12, 2, 9, 40, 56, 120, DateTimeKind.Utc).AddTicks(4865),
                             Description = "Administrator role",
                             RoleName = "Admin"
                         },
                         new
                         {
                             RoleId = 2,
-                            CreatedAt = new DateTime(2025, 11, 6, 4, 3, 38, 196, DateTimeKind.Utc).AddTicks(5233),
+                            CreatedAt = new DateTime(2025, 12, 2, 9, 40, 56, 120, DateTimeKind.Utc).AddTicks(4867),
                             Description = "Teacher role",
                             RoleName = "Teacher"
                         },
                         new
                         {
                             RoleId = 3,
-                            CreatedAt = new DateTime(2025, 11, 6, 4, 3, 38, 196, DateTimeKind.Utc).AddTicks(5235),
+                            CreatedAt = new DateTime(2025, 12, 2, 9, 40, 56, 120, DateTimeKind.Utc).AddTicks(4868),
                             Description = "Student role",
                             RoleName = "Student"
                         });

@@ -69,15 +69,31 @@ namespace ExamsService.Controllers
             var activeExams = examsInfo.LongCount(e => (e.Status != null && e.Status.Equals("Active", StringComparison.OrdinalIgnoreCase)) || (e.StartAt.HasValue && e.EndAt.HasValue && e.StartAt.Value <= now && e.EndAt.Value >= now));
             var completedExams = examsInfo.LongCount(e => (e.Status != null && e.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase)) || (e.EndAt.HasValue && e.EndAt.Value < now));
 
-            var attempts = await _db.ExamAttempts.AsNoTracking().Select(a => new { a.Score, a.MaxScore, a.ExamId }).ToListAsync();
-            var scores10 = attempts.Where(a => a.Score.HasValue && a.MaxScore.HasValue && a.MaxScore.Value > 0).Select(a => (a.Score!.Value / a.MaxScore!.Value) * 10m).ToList();
+            // Get all attempts with valid scores (same logic as GetExamsStats)
+            var attempts = await _db.ExamAttempts
+                .AsNoTracking()
+                .Where(a => !a.HasDelete && a.Score.HasValue && a.MaxScore.HasValue && a.MaxScore.Value > 0)
+                .Select(a => new { a.Score, a.MaxScore, a.ExamId })
+                .ToListAsync();
+            var scores10 = attempts.Select(a => (a.Score!.Value / a.MaxScore!.Value) * 10m).ToList();
             var avgScore = scores10.Any() ? scores10.Average() : 0m;
 
-            var passCount = await _db.ExamAttempts
+            // Calculate pass count - need to do in memory because of complex logic
+            var attemptsWithExams = await _db.ExamAttempts
                 .AsNoTracking()
-                .Join(_db.Exams.AsNoTracking(), a => a.ExamId, e => e.ExamId, (a, e) => new { a.Score, e.PassingMark })
-                .CountAsync(x => x.Score.HasValue && x.PassingMark.HasValue && x.Score.Value >= x.PassingMark.Value);
-            var totalAttempts = await _db.ExamAttempts.AsNoTracking().CountAsync();
+                .Where(a => !a.HasDelete && a.Score.HasValue && a.MaxScore.HasValue && a.MaxScore.Value > 0)
+                .Join(_db.Exams.AsNoTracking(), a => a.ExamId, e => e.ExamId, (a, e) => new { a.Score, a.MaxScore, e.PassingMark })
+                .ToListAsync();
+            
+            var passCount = attemptsWithExams.Count(x => {
+                if (!x.Score.HasValue || !x.MaxScore.HasValue || x.MaxScore.Value <= 0) return false;
+                var normalizedScore = (x.Score.Value / x.MaxScore.Value) * 10m;
+                return x.PassingMark.HasValue && (normalizedScore >= x.PassingMark.Value || x.Score.Value >= x.PassingMark.Value);
+            });
+            var totalAttempts = await _db.ExamAttempts
+                .AsNoTracking()
+                .Where(a => !a.HasDelete && a.Score.HasValue && a.MaxScore.HasValue && a.MaxScore.Value > 0)
+                .CountAsync();
             var passRate = totalAttempts > 0 ? (decimal)passCount * 100m / (decimal)totalAttempts : 0m;
 
             var payload = new OverallStatistics
@@ -101,44 +117,111 @@ namespace ExamsService.Controllers
         {
             try
             {
+            // Build query - execute early to avoid SQL syntax issues
             var examsQuery = _db.Exams
                 .AsNoTracking()
-                .Where(e => !e.HasDelete)
-                .AsQueryable();
+                .Where(e => !e.HasDelete);
 
-            // Subject filter will be applied after fetching, using Subjects dictionary
+            // Apply filters before executing
             if (dateFrom.HasValue)
             {
-                examsQuery = examsQuery.Where(e => e.StartAt.HasValue && e.StartAt.Value.Date >= dateFrom.Value.Date);
+                var start = dateFrom.Value.Date;
+                examsQuery = examsQuery.Where(e => e.StartAt.HasValue && e.StartAt.Value >= start);
             }
             if (dateTo.HasValue)
             {
-                examsQuery = examsQuery.Where(e => e.EndAt.HasValue && e.EndAt.Value.Date <= dateTo.Value.Date);
+                var end = dateTo.Value.Date.AddDays(1).AddTicks(-1);
+                examsQuery = examsQuery.Where(e => e.EndAt.HasValue && e.EndAt.Value <= end);
             }
             if (!string.IsNullOrWhiteSpace(status))
             {
                 examsQuery = examsQuery.Where(e => e.Status != null && e.Status.Equals(status, StringComparison.OrdinalIgnoreCase));
             }
 
-            var exams = await examsQuery.ToListAsync();
-            var subjectIds = exams.Where(e => e.SubjectId.HasValue).Select(e => e.SubjectId!.Value).Distinct().ToList();
-            var subjectsById = await _db.Subjects.AsNoTracking().Where(s => subjectIds.Contains(s.SubjectId)).ToDictionaryAsync(s => s.SubjectId, s => s.Name);
+            // Execute query first to get exam list
+            var exams = await examsQuery
+                .Select(e => new 
+                { 
+                    ExamId = e.ExamId, 
+                    Title = e.Title, 
+                    SubjectId = e.SubjectId, 
+                    TotalMarks = e.TotalMarks, 
+                    PassingMark = e.PassingMark, 
+                    DurationMinutes = e.DurationMinutes, 
+                    StartAt = e.StartAt 
+                })
+                .ToListAsync();
+            
+            // Get subject IDs from exams (in memory)
+            var subjectIds = exams
+                .Where(e => e.SubjectId.HasValue)
+                .Select(e => e.SubjectId!.Value)
+                .Distinct()
+                .ToList();
+            
+            // Load all subjects and filter in memory to avoid SQL syntax issues
+            Dictionary<int, string> subjectsById = new Dictionary<int, string>();
+            if (subjectIds.Any())
+            {
+                var allSubjects = await _db.Subjects
+                    .AsNoTracking()
+                    .Select(s => new { s.SubjectId, s.Name })
+                    .ToListAsync();
+                
+                subjectsById = allSubjects
+                    .Where(s => subjectIds.Contains(s.SubjectId))
+                    .ToDictionary(x => x.SubjectId, x => x.Name);
+            }
 
+            // Apply subject filter
             if (!string.IsNullOrWhiteSpace(subject))
             {
                 exams = exams.Where(e => e.SubjectId.HasValue && subjectsById.TryGetValue(e.SubjectId!.Value, out var name) && string.Equals(name, subject, StringComparison.OrdinalIgnoreCase)).ToList();
             }
+            
             var examIds = exams.Select(e => e.ExamId).ToList();
-
-            var attemptsAll = await _db.ExamAttempts
+            
+            // Debug: Check total attempts first
+            var totalAttemptsCheck = await _db.ExamAttempts
                 .AsNoTracking()
                 .Where(a => examIds.Contains(a.ExamId))
-                .Select(a => new { a.ExamId, a.Score, a.MaxScore })
+                .CountAsync();
+            Console.WriteLine($"[DEBUG] Total attempts for {examIds.Count} exams: {totalAttemptsCheck}");
+            
+            // Get all attempts first to debug
+            var allAttemptsRaw = await _db.ExamAttempts
+                .AsNoTracking()
+                .Where(a => examIds.Contains(a.ExamId))
+                .Select(a => new { a.ExamId, a.Score, a.MaxScore, a.HasDelete, a.IsSubmitted })
                 .ToListAsync();
+            
+            Console.WriteLine($"[DEBUG] Raw attempts: {allAttemptsRaw.Count}");
+            Console.WriteLine($"[DEBUG] HasDelete=false: {allAttemptsRaw.Count(a => !a.HasDelete)}");
+            Console.WriteLine($"[DEBUG] Has Score: {allAttemptsRaw.Count(a => a.Score.HasValue)}");
+            Console.WriteLine($"[DEBUG] Has MaxScore>0: {allAttemptsRaw.Count(a => a.MaxScore.HasValue && a.MaxScore.Value > 0)}");
+            Console.WriteLine($"[DEBUG] IsSubmitted=true: {allAttemptsRaw.Count(a => a.IsSubmitted)}");
+            
+            // Match the logic from GetOverall() - filter by HasDelete and valid scores
+            var attemptsAll = allAttemptsRaw
+                .Where(a => !a.HasDelete
+                    && a.Score.HasValue 
+                    && a.MaxScore.HasValue 
+                    && a.MaxScore.Value > 0)
+                .Select(a => new { a.ExamId, a.Score, a.MaxScore })
+                .ToList();
+            
+            Console.WriteLine($"[DEBUG] Filtered attempts with valid scores: {attemptsAll.Count}");
+            
             var attemptsByExam = attemptsAll
                 .GroupBy(a => a.ExamId)
                 .Select(g => new { ExamId = g.Key, Items = g.Select(a => new { a.Score, a.MaxScore }).ToList(), Count = g.Count() })
                 .ToList();
+            
+            Console.WriteLine($"[DEBUG] Exams with attempts: {attemptsByExam.Count}");
+            foreach (var examGroup in attemptsByExam.Take(5))
+            {
+                Console.WriteLine($"[DEBUG] Exam {examGroup.ExamId}: {examGroup.Count} attempts");
+            }
 
             var stats = new List<ExamStatistic>();
             foreach (var e in exams)
@@ -161,15 +244,47 @@ namespace ExamsService.Controllers
                 decimal lowest = scores.Any() ? scores.Min() : 0m;
 
                 int pass = 0;
-                if (group != null)
+                var totalRes = group?.Items.Count ?? 0;
+                
+                if (group != null && totalRes > 0)
                 {
                     var passMark = e.PassingMark ?? 0m;
-                    pass = group.Items.Count(x => x.Score.HasValue && x.Score.Value >= passMark);
+                    // Calculate pass based on normalized score (0-10 scale)
+                    // But also check raw score against PassingMark if it's in raw score format
+                    pass = group.Items.Count(x => 
+                    {
+                        if (!x.Score.HasValue || !x.MaxScore.HasValue || x.MaxScore.Value <= 0) return false;
+                        
+                        // Try normalized score first (0-10 scale)
+                        var normalizedScore = (x.Score.Value / x.MaxScore.Value) * 10m;
+                        if (normalizedScore >= passMark) return true;
+                        
+                        // Also check if raw score meets passing mark (in case PassingMark is in raw format)
+                        if (x.Score.Value >= passMark) return true;
+                        
+                        return false;
+                    });
                 }
-                var totalRes = group?.Items.Count ?? 0;
+                
                 var passRate = totalRes > 0 ? (decimal)pass * 100m / (decimal)totalRes : 0m;
 
                 var distribution = BuildDistribution(scores);
+                
+                // Debug logging for first few exams
+                if (stats.Count < 3)
+                {
+                    string? subjectName = null;
+                    if (e.SubjectId.HasValue && subjectsById.TryGetValue(e.SubjectId.Value, out var subjectNameValue))
+                    {
+                        subjectName = subjectNameValue;
+                    }
+                    
+                    Console.WriteLine($"[DEBUG] Exam {e.ExamId} ({e.Title}):");
+                    Console.WriteLine($"  SubjectId: {e.SubjectId}, Subject: {subjectName ?? "null"}");
+                    Console.WriteLine($"  Participants: {group?.Count ?? 0}, Scores count: {scores.Count}");
+                    Console.WriteLine($"  Average: {avg}, Highest: {highest}, Lowest: {lowest}");
+                    Console.WriteLine($"  PassRate: {passRate}%, Distribution buckets: {distribution.Count}");
+                }
 
                 stats.Add(new ExamStatistic
                 {
@@ -186,6 +301,11 @@ namespace ExamsService.Controllers
                     ScoreDistribution = distribution
                 });
             }
+            
+            Console.WriteLine($"[DEBUG] Total stats returned: {stats.Count}");
+            Console.WriteLine($"[DEBUG] Stats with participants: {stats.Count(s => s.TotalParticipants > 0)}");
+            Console.WriteLine($"[DEBUG] Stats with scores: {stats.Count(s => s.AverageScore > 0)}");
+            Console.WriteLine($"[DEBUG] Stats with distribution: {stats.Count(s => s.ScoreDistribution.Any(d => d.Count > 0))}");
 
             return Ok(stats);
             }
@@ -193,9 +313,40 @@ namespace ExamsService.Controllers
             {
                 try
                 {
-                    var fallbackExams = await _db.Exams.AsNoTracking().Where(e => !e.HasDelete).ToListAsync();
-                    var subjectIds = fallbackExams.Where(e => e.SubjectId.HasValue).Select(e => e.SubjectId!.Value).Distinct().ToList();
-                    var subjectsById = await _db.Subjects.AsNoTracking().Where(s => subjectIds.Contains(s.SubjectId)).ToDictionaryAsync(s => s.SubjectId, s => s.Name);
+                    var fallbackExams = await _db.Exams
+                        .AsNoTracking()
+                        .Where(e => !e.HasDelete)
+                        .Select(e => new 
+                        { 
+                            ExamId = e.ExamId, 
+                            Title = e.Title, 
+                            SubjectId = e.SubjectId, 
+                            TotalMarks = e.TotalMarks, 
+                            PassingMark = e.PassingMark, 
+                            DurationMinutes = e.DurationMinutes, 
+                            StartAt = e.StartAt 
+                        })
+                        .ToListAsync();
+                    
+                    var subjectIds = fallbackExams
+                        .Where(e => e.SubjectId.HasValue)
+                        .Select(e => e.SubjectId!.Value)
+                        .Distinct()
+                        .ToList();
+                    
+                    // Load all subjects and filter in memory
+                    Dictionary<int, string> subjectsById = new Dictionary<int, string>();
+                    if (subjectIds.Any())
+                    {
+                        var allSubjects = await _db.Subjects
+                            .AsNoTracking()
+                            .Select(s => new { s.SubjectId, s.Name })
+                            .ToListAsync();
+                        
+                        subjectsById = allSubjects
+                            .Where(s => subjectIds.Contains(s.SubjectId))
+                            .ToDictionary(x => x.SubjectId, x => x.Name);
+                    }
 
                     var basic = fallbackExams.Select(e => new ExamStatistic
                     {
@@ -216,7 +367,7 @@ namespace ExamsService.Controllers
                 }
                 catch
                 {
-                    return StatusCode(500, new { message = ex.Message });
+                    return StatusCode(500, new { message = ex.ToString() });
                 }
             }
         }

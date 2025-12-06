@@ -87,6 +87,47 @@ namespace ExamsService.Models
         public Question? Question { get; set; }
     }
 
+    // ✅ NEW: ExamVariant - Lưu thông tin mã đề
+    public class ExamVariant
+    {
+        [Key]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+        public int VariantId { get; set; }
+
+        public int ExamId { get; set; }
+
+        [Required]
+        [MaxLength(50)]
+        public string VariantCode { get; set; } = string.Empty; // V01, V02, ...
+
+        public decimal TotalMarks { get; set; }
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public bool HasDelete { get; set; }
+
+        // Navigation
+        public Exam? Exam { get; set; }
+        public ICollection<ExamVariantQuestion> Questions { get; set; } = new List<ExamVariantQuestion>();
+    }
+
+    // ✅ NEW: ExamVariantQuestion - Lưu câu hỏi trong mỗi mã đề
+    public class ExamVariantQuestion
+    {
+        [Key]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+        public int VariantQuestionId { get; set; }
+
+        public int VariantId { get; set; }
+        public int QuestionId { get; set; }
+        public int SequenceIndex { get; set; }
+        public decimal Marks { get; set; }
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public bool HasDelete { get; set; }
+
+        // Navigation
+        public ExamVariant? Variant { get; set; }
+        public Question? Question { get; set; }
+    }
+
     public class LessonQuestion
     {
         [Key]

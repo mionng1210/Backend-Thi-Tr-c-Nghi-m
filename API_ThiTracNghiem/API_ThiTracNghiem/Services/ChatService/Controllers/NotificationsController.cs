@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using ChatService.Data;
 using ChatService.Models;
 using System.Security.Claims;
+using Microsoft.AspNetCore.SignalR;
+using ChatService.Hubs;
 
 namespace ChatService.Controllers
 {
@@ -14,11 +16,13 @@ namespace ChatService.Controllers
     {
         private readonly ChatDbContext _context;
         private readonly ILogger<NotificationsController> _logger;
+        private readonly IHubContext<ChatHub> _hubContext;
 
-        public NotificationsController(ChatDbContext context, ILogger<NotificationsController> logger)
+        public NotificationsController(ChatDbContext context, ILogger<NotificationsController> logger, IHubContext<ChatHub> hubContext)
         {
             _context = context;
             _logger = logger;
+            _hubContext = hubContext;
         }
 
         /// <summary>
@@ -59,6 +63,83 @@ namespace ChatService.Controllers
             {
                 _logger.LogError(ex, "Error getting notifications");
                 return StatusCode(500, new { success = false, message = "Đã xảy ra lỗi khi lấy thông báo" });
+            }
+        }
+
+        [HttpPost("send-to-admins")]
+        public async Task<IActionResult> SendToAdmins([FromBody] CreateAdminNotificationRequest request)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(new { success = false, message = "Dữ liệu không hợp lệ" });
+                }
+
+                var adminIds = await _context.Users
+                    .Include(u => u.Role)
+                    .Where(u => !u.HasDelete && u.Role != null && u.Role.RoleName.ToLower() == "admin")
+                    .Select(u => u.UserId)
+                    .ToListAsync();
+
+                var notifications = adminIds.Select(adminId => new Notification
+                {
+                    UserId = adminId,
+                    Title = request.Title,
+                    Message = request.Message,
+                    Type = request.Type,
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                }).ToList();
+
+                if (notifications.Count > 0)
+                {
+                    _context.Notifications.AddRange(notifications);
+                    await _context.SaveChangesAsync();
+                    var payload = new NotificationResponse { NotificationId = notifications.Last().NotificationId, Title = request.Title, Message = request.Message, Type = request.Type, CreatedAt = notifications.Last().CreatedAt, IsRead = false };
+                    await _hubContext.Clients.Group("Admins").SendAsync("NotificationReceived", payload);
+                }
+
+                return Ok(new { success = true, count = notifications.Count });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending notifications to admins");
+                return StatusCode(500, new { success = false, message = "Đã xảy ra lỗi khi tạo thông báo" });
+            }
+        }
+
+        [HttpPost("send-to-user/{userId}")]
+        public async Task<IActionResult> SendToUser(int userId, [FromBody] CreateUserNotificationRequest request)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(new { success = false, message = "Dữ liệu không hợp lệ" });
+                }
+
+                var noti = new Notification
+                {
+                    UserId = userId,
+                    Title = request.Title,
+                    Message = request.Message,
+                    Type = request.Type,
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                };
+                _context.Notifications.Add(noti);
+                await _context.SaveChangesAsync();
+
+                var payload = new NotificationResponse { NotificationId = noti.NotificationId, Title = noti.Title, Message = noti.Message, Type = noti.Type, CreatedAt = noti.CreatedAt, IsRead = noti.IsRead };
+                await _hubContext.Clients.Group($"User_{userId}").SendAsync("NotificationReceived", payload);
+
+                return Ok(new { success = true, data = payload });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending notification to user {UserId}", userId);
+                return StatusCode(500, new { success = false, message = "Đã xảy ra lỗi khi tạo thông báo" });
             }
         }
 

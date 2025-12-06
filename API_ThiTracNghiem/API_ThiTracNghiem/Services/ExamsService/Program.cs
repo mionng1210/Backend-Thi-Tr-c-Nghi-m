@@ -149,6 +149,34 @@ using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ExamsDbContext>();
     
+    // Ensure Courses.UpdatedAt column exists (temporary fix for sync issues)
+    try
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        await connection.OpenAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            IF NOT EXISTS (
+                SELECT 1 
+                FROM sys.columns 
+                WHERE object_id = OBJECT_ID(N'[dbo].[Courses]') 
+                AND name = 'UpdatedAt'
+            )
+            BEGIN
+                ALTER TABLE [dbo].[Courses]
+                ADD [UpdatedAt] datetime2 NULL;
+            END";
+        await command.ExecuteNonQueryAsync();
+        await connection.CloseAsync();
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        logger.LogInformation("✅ Đã kiểm tra và thêm cột Courses.UpdatedAt nếu cần.");
+    }
+    catch (Exception ex)
+    {
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        logger.LogWarning(ex, "Không thể thêm cột Courses.UpdatedAt. Có thể cột đã tồn tại hoặc lỗi kết nối.");
+    }
+    
     // Thêm cột Content vào bảng Lessons nếu chưa có (tạm thời fix)
     try
     {
@@ -270,12 +298,121 @@ using (var scope = app.Services.CreateScope())
         logger.LogWarning(ex, "Không thể tạo bảng Feedbacks. Có thể bảng đã tồn tại hoặc có lỗi.");
     }
     
-    dbContext.Database.Migrate();
+    // ✅ Tự động apply migrations
+    try
+    {
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        logger.LogInformation("🔄 Đang kiểm tra và apply database migrations...");
+        dbContext.Database.Migrate();
+        logger.LogInformation("✅ Database migrations đã được apply thành công.");
+    }
+    catch (Exception ex)
+    {
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "❌ Lỗi khi apply database migrations. Vui lòng kiểm tra connection string và database permissions.");
+        // Không throw để ứng dụng vẫn có thể chạy, nhưng log lỗi
+    }
     
+    // ✅ Tạo bảng ExamVariants và ExamVariantQuestions nếu chưa tồn tại
+    try
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        await connection.OpenAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            -- Tạo bảng ExamVariants nếu chưa tồn tại
+            IF NOT EXISTS (
+                SELECT 1 
+                FROM sys.tables 
+                WHERE name = 'ExamVariants' 
+                AND schema_id = SCHEMA_ID('dbo')
+            )
+            BEGIN
+                CREATE TABLE [dbo].[ExamVariants] (
+                    [VariantId] int IDENTITY(1,1) NOT NULL,
+                    [ExamId] int NOT NULL,
+                    [VariantCode] nvarchar(50) NOT NULL,
+                    [TotalMarks] decimal(18,2) NOT NULL,
+                    [CreatedAt] datetime2 NOT NULL DEFAULT GETUTCDATE(),
+                    [HasDelete] bit NOT NULL DEFAULT 0,
+                    CONSTRAINT [PK_ExamVariants] PRIMARY KEY ([VariantId]),
+                    CONSTRAINT [FK_ExamVariants_Exams_ExamId] FOREIGN KEY ([ExamId]) 
+                        REFERENCES [dbo].[Exams] ([ExamId]) ON DELETE CASCADE
+                );
+                
+                CREATE UNIQUE INDEX [IX_ExamVariants_ExamId_VariantCode] 
+                    ON [dbo].[ExamVariants] ([ExamId], [VariantCode]) 
+                    WHERE [HasDelete] = 0;
+                
+                CREATE INDEX [IX_ExamVariants_ExamId] ON [dbo].[ExamVariants] ([ExamId]);
+            END
+            
+            -- Tạo bảng ExamVariantQuestions nếu chưa tồn tại
+            IF NOT EXISTS (
+                SELECT 1 
+                FROM sys.tables 
+                WHERE name = 'ExamVariantQuestions' 
+                AND schema_id = SCHEMA_ID('dbo')
+            )
+            BEGIN
+                CREATE TABLE [dbo].[ExamVariantQuestions] (
+                    [VariantQuestionId] int IDENTITY(1,1) NOT NULL,
+                    [VariantId] int NOT NULL,
+                    [QuestionId] int NOT NULL,
+                    [SequenceIndex] int NOT NULL,
+                    [Marks] decimal(18,2) NOT NULL,
+                    [CreatedAt] datetime2 NOT NULL DEFAULT GETUTCDATE(),
+                    [HasDelete] bit NOT NULL DEFAULT 0,
+                    CONSTRAINT [PK_ExamVariantQuestions] PRIMARY KEY ([VariantQuestionId]),
+                    CONSTRAINT [FK_ExamVariantQuestions_ExamVariants_VariantId] FOREIGN KEY ([VariantId]) 
+                        REFERENCES [dbo].[ExamVariants] ([VariantId]) ON DELETE CASCADE,
+                    CONSTRAINT [FK_ExamVariantQuestions_Questions_QuestionId] FOREIGN KEY ([QuestionId]) 
+                        REFERENCES [dbo].[Questions] ([QuestionId]) ON DELETE CASCADE
+                );
+                
+                CREATE INDEX [IX_ExamVariantQuestions_VariantId] ON [dbo].[ExamVariantQuestions] ([VariantId]);
+                CREATE INDEX [IX_ExamVariantQuestions_QuestionId] ON [dbo].[ExamVariantQuestions] ([QuestionId]);
+            END";
+        await command.ExecuteNonQueryAsync();
+        await connection.CloseAsync();
+        
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        logger.LogInformation("✅ Đã kiểm tra và tạo bảng ExamVariants, ExamVariantQuestions nếu cần.");
+    }
+    catch (Exception ex)
+    {
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        logger.LogWarning(ex, "Không thể tạo bảng ExamVariants/ExamVariantQuestions. Có thể bảng đã tồn tại hoặc có lỗi.");
+    }
+    
+    // Verify Courses.UpdatedAt column exists after migrations
+    try
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        await connection.OpenAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT CASE WHEN EXISTS (
+                SELECT 1 FROM sys.columns 
+                WHERE object_id = OBJECT_ID(N'[dbo].[Courses]') 
+                AND name = 'UpdatedAt'
+            ) THEN 1 ELSE 0 END";
+        var result = await command.ExecuteScalarAsync();
+        var exists = false;
+        if (result is int i) exists = i == 1; else if (result is long l) exists = l == 1; else if (result is bool b) exists = b;
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        if (exists) logger.LogInformation("✅ Đã xác nhận cột Courses.UpdatedAt tồn tại sau khi migrate.");
+        else logger.LogWarning("⚠️ Cột Courses.UpdatedAt chưa tồn tại. Vui lòng kiểm tra migrations.");
+        await connection.CloseAsync();
+    }
+    catch (Exception ex)
+    {
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        logger.LogWarning(ex, "Không thể xác thực cột Courses.UpdatedAt.");
+    }
+
     // Seed data
     await ExamsService.Data.SeedData.SeedAsync(dbContext);
 }
 
 app.Run();
-
-

@@ -459,6 +459,8 @@ namespace ExamsService.DTOs
         public List<int> SelectedOptionIds { get; set; } = new();
         public string? TextAnswer { get; set; }
         public string? CorrectTextAnswer { get; set; }
+        // ✅ Added: Options with content for display
+        public List<AnswerOptionDto> Options { get; set; } = new();
     }
 
     // Response DTO for user exam results

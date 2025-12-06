@@ -383,9 +383,45 @@ namespace API_ThiTracNghiem.Repositories
 
         public async Task<List<ExamQuestion>> GetExamQuestionsByVariantAsync(int examId, string variantCode)
         {
-            // For now, return default exam questions since variant storage is not implemented
-            // In a full implementation, you would store variants in a separate table
-            return await GetExamQuestionsAsync(examId);
+            // ✅ Lấy variant theo examId và variantCode
+            var variant = await _db.ExamVariants
+                .AsNoTracking()
+                .Include(v => v.Questions)
+                    .ThenInclude(vq => vq.Question)
+                .FirstOrDefaultAsync(v => v.ExamId == examId && 
+                                         v.VariantCode == variantCode && 
+                                         !v.HasDelete);
+
+            if (variant == null)
+            {
+                // Nếu không tìm thấy variant, trả về danh sách rỗng hoặc fallback về exam questions
+                return new List<ExamQuestion>();
+            }
+
+            // ✅ Lấy tất cả câu hỏi từ variant, sắp xếp theo SequenceIndex
+            var variantQuestions = variant.Questions
+                .Where(vq => !vq.HasDelete && vq.Question != null && !vq.Question.HasDelete)
+                .OrderBy(vq => vq.SequenceIndex)
+                .ToList();
+
+            // ✅ Convert ExamVariantQuestion sang ExamQuestion format
+            var examQuestions = new List<ExamQuestion>();
+            foreach (var vq in variantQuestions)
+            {
+                examQuestions.Add(new ExamQuestion
+                {
+                    ExamQuestionId = vq.VariantQuestionId, // Dùng VariantQuestionId làm ID tạm
+                    ExamId = examId,
+                    QuestionId = vq.QuestionId,
+                    SequenceIndex = vq.SequenceIndex,
+                    Marks = vq.Marks,
+                    CreatedAt = vq.CreatedAt,
+                    HasDelete = false,
+                    Question = vq.Question // Include question để có thể truy cập sau
+                });
+            }
+
+            return examQuestions;
         }
 
         public async Task<ExamAttempt> CreateExamAttemptAsync(ExamAttempt examAttempt)

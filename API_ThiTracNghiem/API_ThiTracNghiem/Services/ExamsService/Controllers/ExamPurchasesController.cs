@@ -8,6 +8,7 @@ using API_ThiTracNghiem.Middleware;
 using System;
 using System.IO;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Security.Claims;
 
@@ -345,6 +346,44 @@ namespace ExamsService.Controllers
                         existingEnrollment.Status = "Active";
                         await _context.SaveChangesAsync();
                     }
+
+                    try
+                    {
+                        var config = HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+                        var baseUrl = config["Services:ChatService:BaseUrl"];
+                        if (!string.IsNullOrWhiteSpace(baseUrl))
+                        {
+                            var rawAuth = Request.Headers["Authorization"].ToString().Trim('"');
+                            var token = rawAuth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? rawAuth[7..] : rawAuth;
+                            using var client = new HttpClient { BaseAddress = new Uri(baseUrl) };
+                            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                            var body = new
+                            {
+                                title = "Thanh toán bài thi thành công",
+                                message = $"Người dùng {userId.Value} đã mua bài thi '{exam.Title}' (ID {exam.ExamId}).",
+                                type = "purchase_exam"
+                            };
+                            var content = new StringContent(System.Text.Json.JsonSerializer.Serialize(body), System.Text.Encoding.UTF8, "application/json");
+                            await client.PostAsync("/api/notifications/send-to-admins", content);
+                            try
+                            {
+                                int? teacherId = exam.CreatedBy;
+                                if (!teacherId.HasValue && exam.CourseId.HasValue)
+                                {
+                                    var course = await _context.Courses.FirstOrDefaultAsync(c => c.CourseId == exam.CourseId.Value);
+                                    teacherId = course?.TeacherId;
+                                }
+                                if (teacherId.HasValue)
+                                {
+                                    await client.PostAsync($"/api/notifications/send-to-user/{teacherId.Value}", content);
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                    catch
+                    {
+                    }
                 }
 
                 var response = new PurchaseExamResponse
@@ -577,6 +616,45 @@ namespace ExamsService.Controllers
                                 {
                                     existingEnrollment.Status = "Active";
                                     await _context.SaveChangesAsync();
+                                }
+
+                                try
+                                {
+                                    var exam = await _context.Exams.FirstOrDefaultAsync(e => e.ExamId == examId);
+                                    var config = HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+                                    var baseUrl = config["Services:ChatService:BaseUrl"];
+                                    if (!string.IsNullOrWhiteSpace(baseUrl))
+                                    {
+                                        var rawAuth = Request.Headers["Authorization"].ToString().Trim('"');
+                                        var token = rawAuth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? rawAuth[7..] : rawAuth;
+                                        using var client = new HttpClient { BaseAddress = new Uri(baseUrl) };
+                                        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+                                        var body = new
+                                        {
+                                            title = "Thanh toán bài thi thành công",
+                                            message = $"Người dùng {userId} đã mua bài thi '{(exam?.Title ?? examId.ToString())}' (ID {examId}).",
+                                            type = "purchase_exam"
+                                        };
+                                        var content = new StringContent(System.Text.Json.JsonSerializer.Serialize(body), System.Text.Encoding.UTF8, "application/json");
+                                        await client.PostAsync("/api/notifications/send-to-admins", content);
+                                        try
+                                        {
+                                            int? teacherId = exam?.CreatedBy;
+                                            if (!teacherId.HasValue && exam?.CourseId != null)
+                                            {
+                                                var course = await _context.Courses.FirstOrDefaultAsync(c => c.CourseId == exam.CourseId.Value);
+                                                teacherId = course?.TeacherId;
+                                            }
+                                            if (teacherId.HasValue)
+                                            {
+                                                await client.PostAsync($"/api/notifications/send-to-user/{teacherId.Value}", content);
+                                            }
+                                        }
+                                        catch { }
+                                    }
+                                }
+                                catch
+                                {
                                 }
                             }
                         }
@@ -812,6 +890,45 @@ namespace ExamsService.Controllers
                         {
                             existingEnrollment.Status = "Active";
                             await _context.SaveChangesAsync();
+                        }
+
+                        try
+                        {
+                            var exam = await _context.Exams.FirstOrDefaultAsync(e => e.ExamId == examId);
+                            var config = HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+                            var baseUrl = config["Services:ChatService:BaseUrl"];
+                            if (!string.IsNullOrWhiteSpace(baseUrl))
+                            {
+                                var rawAuth = Request.Headers["Authorization"].ToString().Trim('"');
+                                var token = rawAuth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? rawAuth[7..] : rawAuth;
+                                using var client = new HttpClient { BaseAddress = new Uri(baseUrl) };
+                                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                                var body = new
+                                {
+                                    title = "Thanh toán bài thi thành công",
+                                    message = $"Người dùng {userId} đã mua bài thi '{(exam?.Title ?? examId.ToString())}' (ID {examId}).",
+                                    type = "purchase_exam"
+                                };
+                                var content = new StringContent(System.Text.Json.JsonSerializer.Serialize(body), System.Text.Encoding.UTF8, "application/json");
+                                await client.PostAsync("/api/notifications/send-to-admins", content);
+                                try
+                                {
+                                    int? teacherId = exam?.CreatedBy;
+                                    if (!teacherId.HasValue && exam?.CourseId != null)
+                                    {
+                                        var course = await _context.Courses.FirstOrDefaultAsync(c => c.CourseId == exam.CourseId.Value);
+                                        teacherId = course?.TeacherId;
+                                    }
+                                    if (teacherId.HasValue)
+                                    {
+                                        await client.PostAsync($"/api/notifications/send-to-user/{teacherId.Value}", content);
+                                    }
+                                }
+                                catch { }
+                            }
+                        }
+                        catch
+                        {
                         }
                     }
                 }

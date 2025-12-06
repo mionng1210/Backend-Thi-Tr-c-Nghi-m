@@ -108,6 +108,34 @@ namespace ChatService.Models
         public bool IsRead { get; set; }
     }
 
+    public class CreateAdminNotificationRequest
+    {
+        [Required]
+        [MaxLength(200)]
+        public string Title { get; set; } = string.Empty;
+
+        [Required]
+        [MaxLength(2000)]
+        public string Message { get; set; } = string.Empty;
+
+        [MaxLength(50)]
+        public string? Type { get; set; }
+    }
+
+    public class CreateUserNotificationRequest
+    {
+        [Required]
+        [MaxLength(200)]
+        public string Title { get; set; } = string.Empty;
+
+        [Required]
+        [MaxLength(2000)]
+        public string Message { get; set; } = string.Empty;
+
+        [MaxLength(50)]
+        public string? Type { get; set; }
+    }
+
     public class UpdateNotificationSettingsRequest
     {
         public bool EmailEnabled { get; set; }

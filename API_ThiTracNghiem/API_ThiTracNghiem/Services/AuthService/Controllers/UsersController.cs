@@ -10,6 +10,7 @@ using System.Globalization;
 using API_ThiTracNghiem.Services.AuthService.Data;
 using API_ThiTracNghiem.Services.AuthService.DTOs;
 using API_ThiTracNghiem.Services.AuthService.Models;
+using System.Net.Http;
 
 namespace API_ThiTracNghiem.Services.AuthService.Controllers;
 
@@ -136,6 +137,11 @@ public class UsersController : ControllerBase
             user.FullName = request.FullName;
         }
 
+        if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
+        {
+            user.PhoneNumber = request.PhoneNumber;
+        }
+
         if (!string.IsNullOrWhiteSpace(request.Gender))
         {
             user.Gender = request.Gender;
@@ -234,10 +240,36 @@ public class UsersController : ControllerBase
             PaymentMethod = request.PaymentMethod,
             PaymentReference = request.PaymentReference,
             PaymentStatus = string.IsNullOrWhiteSpace(request.PaymentMethod) ? "none" : (request.PaymentStatus ?? "pending"),
-            PaymentAmount = request.PaymentAmount
+            PaymentAmount = request.PaymentAmount,
+            EvidenceImageUrl = request.EvidenceImageUrl,
+            Reason = request.Reason
         };
         _db.PermissionRequests.Add(req);
         await _db.SaveChangesAsync();
+
+        try
+        {
+            var config = HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+            var baseUrl = config["Services:ChatService:BaseUrl"];
+            if (!string.IsNullOrWhiteSpace(baseUrl))
+            {
+                var rawAuth = Request.Headers["Authorization"].ToString().Trim('"');
+                var token = rawAuth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? rawAuth[7..] : rawAuth;
+                using var client = new HttpClient { BaseAddress = new Uri(baseUrl) };
+                client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+                var body = new
+                {
+                    title = "Yêu cầu trở thành giáo viên mới",
+                    message = $"Người dùng {(user.FullName ?? user.Email ?? userId.ToString())} đã gửi yêu cầu trở thành giáo viên.",
+                    type = "permission_request"
+                };
+                var content = new StringContent(System.Text.Json.JsonSerializer.Serialize(body), System.Text.Encoding.UTF8, "application/json");
+                await client.PostAsync("/api/notifications/send-to-admins", content);
+            }
+        }
+        catch
+        {
+        }
 
         return Ok(new { message = "Đã gửi yêu cầu trở thành giáo viên", requestId = req.PermissionRequestId });
     }

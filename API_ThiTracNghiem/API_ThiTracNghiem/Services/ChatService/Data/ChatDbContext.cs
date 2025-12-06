@@ -65,6 +65,10 @@ namespace ChatService.Data
                 entity.Property(cr => cr.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
                 entity.Property(cr => cr.IsActive).HasDefaultValue(true);
                 entity.Property(cr => cr.HasDelete).HasDefaultValue(false);
+                entity.HasOne(cr => cr.Creator)
+                      .WithMany()
+                      .HasForeignKey(cr => cr.CreatedBy)
+                      .OnDelete(DeleteBehavior.Restrict);
             });
 
             // Configure ChatMessage (depends on ChatRoom and User)
@@ -76,6 +80,14 @@ namespace ChatService.Data
                 entity.Property(cm => cm.SentAt).HasDefaultValueSql("GETUTCDATE()");
                 entity.Property(cm => cm.IsEdited).HasDefaultValue(false);
                 entity.Property(cm => cm.HasDelete).HasDefaultValue(false);
+                entity.HasOne(cm => cm.Room)
+                      .WithMany(r => r.Messages)
+                      .HasForeignKey(cm => cm.RoomId)
+                      .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(cm => cm.Sender)
+                      .WithMany()
+                      .HasForeignKey(cm => cm.SenderId)
+                      .OnDelete(DeleteBehavior.Restrict);
             });
 
             // Configure ChatRoomMember (depends on ChatRoom and User)
@@ -88,6 +100,14 @@ namespace ChatService.Data
                 
                 // Unique constraint for room-user combination
                 entity.HasIndex(crm => new { crm.RoomId, crm.UserId }).IsUnique();
+                entity.HasOne(crm => crm.Room)
+                      .WithMany(r => r.Members)
+                      .HasForeignKey(crm => crm.RoomId)
+                      .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(crm => crm.User)
+                      .WithMany()
+                      .HasForeignKey(crm => crm.UserId)
+                      .OnDelete(DeleteBehavior.Restrict);
             });
 
             // Configure Feedback

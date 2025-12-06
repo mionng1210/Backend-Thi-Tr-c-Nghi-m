@@ -27,6 +27,9 @@ namespace API_ThiTracNghiem.Contracts
         [MaxLength(150, ErrorMessage = "Họ tên tối đa 150 ký tự")]
         public string? FullName { get; set; }
 
+        [MaxLength(30, ErrorMessage = "Số điện thoại tối đa 30 ký tự")]
+        public string? PhoneNumber { get; set; }
+
         [RegularExpression("^(Nam|Nữ)$", ErrorMessage = "Giới tính chỉ nhận 'Nam' hoặc 'Nữ'")]
         public string? Gender { get; set; }
 

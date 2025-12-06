@@ -146,11 +146,114 @@ app.MapControllers();
 // Map SignalR Hub
 app.MapHub<ChatHub>("/chatHub");
 
-// Ensure database is migrated
+// Ensure required tables exist, then migrate
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
-    dbContext.Database.Migrate();
+    try
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        await connection.OpenAsync();
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = @"
+IF OBJECT_ID(N'[dbo].[Users]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[Users](
+        [UserId] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [Email] NVARCHAR(256) NULL,
+        [PhoneNumber] NVARCHAR(30) NULL,
+        [PasswordHash] NVARCHAR(256) NOT NULL,
+        [FullName] NVARCHAR(150) NULL,
+        [RoleId] INT NULL,
+        [Gender] NVARCHAR(20) NULL,
+        [DateOfBirth] DATETIME2 NULL,
+        [AvatarUrl] NVARCHAR(500) NULL,
+        [Address] NVARCHAR(500) NULL,
+        [IsEmailVerified] BIT NOT NULL DEFAULT(0),
+        [IsPhoneVerified] BIT NOT NULL DEFAULT(0),
+        [Status] NVARCHAR(50) NULL,
+        [CreatedAt] DATETIME2 NOT NULL DEFAULT(SYSUTCDATETIME()),
+        [UpdatedAt] DATETIME2 NULL,
+        [HasDelete] BIT NOT NULL DEFAULT(0)
+    );
+    CREATE UNIQUE INDEX [IX_Users_Email] ON [dbo].[Users]([Email]) WHERE [Email] IS NOT NULL;
+END
+
+IF OBJECT_ID(N'[dbo].[Roles]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[Roles](
+        [RoleId] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [RoleName] NVARCHAR(50) NOT NULL,
+        [Description] NVARCHAR(200) NULL,
+        [CreatedAt] DATETIME2 NOT NULL DEFAULT(SYSUTCDATETIME()),
+        [HasDelete] BIT NOT NULL DEFAULT(0)
+    );
+END
+
+IF OBJECT_ID(N'[dbo].[ChatRooms]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[ChatRooms](
+        [RoomId] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [Name] NVARCHAR(200) NOT NULL,
+        [Description] NVARCHAR(1000) NULL,
+        [RoomType] NVARCHAR(50) NOT NULL,
+        [CourseId] INT NULL,
+        [ExamId] INT NULL,
+        [CreatedBy] INT NOT NULL,
+        [CreatedAt] DATETIME2 NOT NULL DEFAULT(SYSUTCDATETIME()),
+        [IsActive] BIT NOT NULL DEFAULT(1),
+        [HasDelete] BIT NOT NULL DEFAULT(0)
+    );
+    CREATE INDEX [IX_ChatRooms_CreatedBy] ON [dbo].[ChatRooms]([CreatedBy]);
+END
+
+IF OBJECT_ID(N'[dbo].[ChatRoomMembers]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[ChatRoomMembers](
+        [MemberId] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [RoomId] INT NOT NULL,
+        [UserId] INT NOT NULL,
+        [Role] NVARCHAR(50) NOT NULL,
+        [JoinedAt] DATETIME2 NOT NULL DEFAULT(SYSUTCDATETIME()),
+        [LastSeenAt] DATETIME2 NULL,
+        [IsActive] BIT NOT NULL DEFAULT(1)
+    );
+    CREATE UNIQUE INDEX [IX_ChatRoomMembers_RoomId_UserId] ON [dbo].[ChatRoomMembers]([RoomId],[UserId]);
+    CREATE INDEX [IX_ChatRoomMembers_UserId] ON [dbo].[ChatRoomMembers]([UserId]);
+END
+
+IF OBJECT_ID(N'[dbo].[ChatMessages]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[ChatMessages](
+        [MessageId] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [RoomId] INT NOT NULL,
+        [SenderId] INT NOT NULL,
+        [Content] NVARCHAR(MAX) NOT NULL,
+        [MessageType] NVARCHAR(50) NOT NULL,
+        [AttachmentUrl] NVARCHAR(500) NULL,
+        [AttachmentName] NVARCHAR(200) NULL,
+        [ReplyToMessageId] INT NULL,
+        [SentAt] DATETIME2 NOT NULL DEFAULT(SYSUTCDATETIME()),
+        [IsEdited] BIT NOT NULL DEFAULT(0),
+        [EditedAt] DATETIME2 NULL,
+        [HasDelete] BIT NOT NULL DEFAULT(0)
+    );
+    CREATE INDEX [IX_ChatMessages_RoomId] ON [dbo].[ChatMessages]([RoomId]);
+    CREATE INDEX [IX_ChatMessages_SenderId] ON [dbo].[ChatMessages]([SenderId]);
+END
+";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        await dbContext.Database.MigrateAsync();
+    }
+    catch (Exception ex)
+    {
+        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+        logger.LogError(ex, "Database initialization failed");
+        throw;
+    }
 }
 
 app.Run();
